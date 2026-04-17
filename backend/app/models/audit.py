@@ -27,3 +27,8 @@ class AuditLog(Base):
     ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
     details: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+    # Phase 2.1 §9: tamper-evident chain. Each row hashes its canonical
+    # payload plus the previous row's hash, so inserting, deleting, or
+    # editing a row anywhere in history is detectable by re-computing.
+    prev_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    row_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)

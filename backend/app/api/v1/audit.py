@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...core.db import get_db
 from ...core.deps import require_roles
 from ...models.audit import AuditLog
+from ...services import audit as audit_service
 from ...services.csv_safe import csv_safe
 
 router = APIRouter(prefix="/audit", tags=["audit"])
@@ -51,6 +52,15 @@ async def list_audit(
         }
         for r in rows
     ]
+
+
+@router.get("/verify")
+async def verify_audit_chain(
+    _=Depends(esg_admin_only),
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> dict:
+    """Recompute the sha256 chain. Returns {ok: true/false, ...}."""
+    return await audit_service.verify_chain(db)
 
 
 @router.get("/export.csv")
