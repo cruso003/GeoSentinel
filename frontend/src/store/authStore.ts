@@ -1,12 +1,16 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { AuthSession, User, UserRole } from '@/types';
+import { api, ApiError } from '@/api/client';
 
 interface AuthState {
   session: AuthSession | null;
   isAuthenticated: boolean;
+  loginError: string | null;
+  loginPending: boolean;
   setSession: (session: AuthSession | null) => void;
   loginAsMock: (role: UserRole) => void;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -21,6 +25,8 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       session: null,
       isAuthenticated: false,
+      loginError: null,
+      loginPending: false,
       setSession: (session) => set({ session, isAuthenticated: !!session }),
       loginAsMock: (role) =>
         set({
@@ -30,8 +36,25 @@ export const useAuthStore = create<AuthState>()(
             user: MOCK_USERS[role],
           },
           isAuthenticated: true,
+          loginError: null,
         }),
-      logout: () => set({ session: null, isAuthenticated: false }),
+      login: async (email, password) => {
+        set({ loginPending: true, loginError: null });
+        try {
+          const res = await api.post<AuthSession>('/auth/login', { email, password });
+          set({ session: res, isAuthenticated: true, loginPending: false });
+        } catch (err) {
+          const message =
+            err instanceof ApiError && err.status === 401
+              ? 'Invalid email or password.'
+              : err instanceof Error
+                ? err.message
+                : 'Login failed.';
+          set({ loginError: message, loginPending: false });
+          throw err;
+        }
+      },
+      logout: () => set({ session: null, isAuthenticated: false, loginError: null }),
     }),
     { name: 'gs.auth' },
   ),

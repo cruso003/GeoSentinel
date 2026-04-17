@@ -12,6 +12,7 @@ from ...core.deps import get_current_user, require_roles
 from ...models.alert import Alert
 from ...models.user import User
 from ...schemas.entities import AlertAcknowledge, AlertOut
+from ...services import audit
 from ...services.ws_hub import ws_hub
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
@@ -68,6 +69,15 @@ async def acknowledge_alert(
     a.acknowledged_at = datetime.now(timezone.utc)
     if body.notes:
         a.notes = body.notes
+    await audit.record(
+        db,
+        user=user,
+        action="acknowledge_alert",
+        target_type="alert",
+        target_id=a.id,
+        site_id=a.site_id,
+        details=body.notes,
+    )
     await db.commit()
     await db.refresh(a)
     await ws_hub.broadcast(

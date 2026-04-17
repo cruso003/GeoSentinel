@@ -3,6 +3,7 @@ from .site import Site, SensorNode, MineSlope
 from .alert import Alert
 from .report import ComplianceReport
 from .ai import EnviroGuardPrediction, SlopeWatchPrediction
+from .audit import AuditLog
 
 __all__ = [
     "User",
@@ -13,4 +14,5 @@ __all__ = [
     "ComplianceReport",
     "EnviroGuardPrediction",
     "SlopeWatchPrediction",
+    "AuditLog",
 ]

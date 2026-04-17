@@ -27,21 +27,26 @@ const QUICK_ROLES: { role: UserRole; label: string; desc: string; icon: React.Re
 
 export function LoginView() {
   const loginMock = useAuthStore((s) => s.loginAsMock);
+  const login = useAuthStore((s) => s.login);
+  const loginError = useAuthStore((s) => s.loginError);
+  const loginPending = useAuthStore((s) => s.loginPending);
   const navigate = useNavigate();
-  const [email, setEmail] = useState('operator@geosentinel.app');
-  const [password, setPassword] = useState('operator123');
+  const [email, setEmail] = useState('operator@geosentinel.dev');
+  const [password, setPassword] = useState('geosentinel');
 
   const onMockLogin = (role: UserRole) => {
     loginMock(role);
     navigate('/');
   };
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Phase 1: derive role from seed credentials (Spec 15.3).
-    if (email.startsWith('admin')) onMockLogin('esg_admin');
-    else if (email.startsWith('community')) onMockLogin('community');
-    else onMockLogin('operator');
+    try {
+      await login(email, password);
+      navigate('/');
+    } catch {
+      // error surfaced via loginError.
+    }
   };
 
   return (
@@ -78,8 +83,20 @@ export function LoginView() {
                 autoComplete="current-password"
               />
             </label>
-            <button type="submit" className="gs-button-primary mt-2 w-full justify-center">
-              Sign in
+            {loginError && (
+              <div
+                role="alert"
+                className="rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-200"
+              >
+                {loginError}
+              </div>
+            )}
+            <button
+              type="submit"
+              disabled={loginPending}
+              className="gs-button-primary mt-2 w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {loginPending ? 'Signing in\u2026' : 'Sign in'}
             </button>
           </form>
           <p className="mt-4 text-xs text-slate-500">

@@ -15,6 +15,7 @@ from ...core.security import (
 )
 from ...models.user import User
 from ...schemas.auth import AccessToken, LoginRequest, RefreshRequest, TokenPair, UserOut
+from ...services import audit
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -25,6 +26,7 @@ async def login(body: LoginRequest, db: Annotated[AsyncSession, Depends(get_db)]
     if not user or not verify_password(body.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     user.last_login_at = datetime.now(timezone.utc)
+    await audit.record(db, user=user, action="login")
     await db.commit()
     return TokenPair(
         access_token=create_access_token(user.id, user.role),

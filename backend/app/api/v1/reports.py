@@ -15,6 +15,7 @@ from ...models.report import ComplianceReport
 from ...models.site import Site
 from ...models.user import User
 from ...schemas.entities import ReportGenerateRequest, ReportOut
+from ...services import audit
 from ...services.report_generator import REPORTS_DIR, generate_report
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -57,6 +58,15 @@ async def generate(
         requested_by=user.email,
     )
     db.add(report)
+    await audit.record(
+        db,
+        user=user,
+        action="generate_report",
+        target_type="compliance_report",
+        target_id=report.id,
+        site_id=body.site_id,
+        details=body.report_type,
+    )
     await db.commit()
     await db.refresh(report)
 

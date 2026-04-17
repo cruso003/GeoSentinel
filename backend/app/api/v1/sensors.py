@@ -5,7 +5,10 @@ from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from ...core.config import get_settings
+from ...core.db import get_db
 from ...core.deps import require_roles
 from ...schemas.sensors import (
     EnvSensorReading,
@@ -13,6 +16,7 @@ from ...schemas.sensors import (
     Resolution,
     SensorIngestPayload,
 )
+from ...services.alert_engine import evaluate_env, evaluate_geo
 from ...services.influx import influx
 from ...services.ws_hub import ws_hub
 
@@ -80,19 +84,26 @@ async def geo_history(
 async def ingest(
     payload: SensorIngestPayload,
     x_gateway_api_key: Annotated[Optional[str], Header()] = None,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
 ):
     settings = get_settings()
     if not x_gateway_api_key or x_gateway_api_key != settings.mqtt_gateway_api_key:
         raise HTTPException(status_code=401, detail="Invalid gateway key")
 
+    alerts = 0
     for r in payload.env:
-        d = r.model_dump()
-        await influx.write_env(d)
+        d = r.model_dump(mode="json")
+        await influx.write_env(r.model_dump())
         await ws_hub.broadcast(r.site_id, {"type": "SENSOR_UPDATE", "kind": "env", "payload": d})
+        alerts += len(await evaluate_env(db, r))
 
     for r in payload.geo:
-        d = r.model_dump()
-        await influx.write_geo(d)
+        d = r.model_dump(mode="json")
+        await influx.write_geo(r.model_dump())
         await ws_hub.broadcast(r.site_id, {"type": "SENSOR_UPDATE", "kind": "geo", "payload": d})
+        alerts += len(await evaluate_geo(db, r))
 
-    return {"accepted": {"env": len(payload.env), "geo": len(payload.geo)}}
+    if alerts:
+        await db.commit()
+
+    return {"accepted": {"env": len(payload.env), "geo": len(payload.geo)}, "alerts": alerts}
