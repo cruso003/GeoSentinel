@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     allowed_origins: str = Field(default="http://localhost:5173")
     enable_mock_stream: bool = Field(default=True)
 
+    # Cookie-based refresh flow (Phase 2.1 §10).
+    refresh_cookie_name: str = Field(default="gs_refresh")
+    refresh_cookie_path: str = Field(default="/api/v1/auth")
+    csrf_cookie_name: str = Field(default="gs_csrf")
+    csrf_header_name: str = Field(default="X-CSRF-Token")
+
     @property
     def cors_origins(self) -> List[str]:
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
