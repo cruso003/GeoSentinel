@@ -4,6 +4,7 @@ from .alert import Alert
 from .report import ComplianceReport
 from .ai import EnviroGuardPrediction, SlopeWatchPrediction
 from .audit import AuditLog
+from .gateway import SensorGateway
 
 __all__ = [
     "User",
@@ -15,4 +16,5 @@ __all__ = [
     "EnviroGuardPrediction",
     "SlopeWatchPrediction",
     "AuditLog",
+    "SensorGateway",
 ]
