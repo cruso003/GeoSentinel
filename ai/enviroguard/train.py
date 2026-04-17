@@ -16,8 +16,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import pickle
 from pathlib import Path
 
 import numpy as np
@@ -118,16 +116,20 @@ def main() -> None:  # pragma: no cover - training entrypoint
     )
 
     model.save(out_dir / "enviroguard.keras")
-    with open(out_dir / "scaler.pkl", "wb") as f:
-        pickle.dump(scaler, f)
-    with open(out_dir / "metadata.json", "w") as f:
-        json.dump({
-            "features": FEATURES,
-            "output_heads": OUTPUT_HEADS,
-            "sequence_length": SEQUENCE_LENGTH,
-            "scaler_mean": scaler.mean_.tolist(),
-            "scaler_scale": scaler.scale_.tolist(),
-        }, f, indent=2)
+    # Phase 2.1 §5: ship scalers as JSON. pickle.load is an RCE surface if the
+    # model dir is ever writable by an untrusted user.
+    (out_dir / "scaler.json").write_text(json.dumps({
+        "mean": scaler.mean_.tolist(),
+        "scale": scaler.scale_.tolist(),
+        "features": FEATURES,
+    }, indent=2))
+    (out_dir / "metadata.json").write_text(json.dumps({
+        "features": FEATURES,
+        "output_heads": OUTPUT_HEADS,
+        "sequence_length": SEQUENCE_LENGTH,
+        "scaler_mean": scaler.mean_.tolist(),
+        "scaler_scale": scaler.scale_.tolist(),
+    }, indent=2))
 
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
     converter.optimizations = [tf.lite.Optimize.DEFAULT]

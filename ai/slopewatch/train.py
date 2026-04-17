@@ -15,7 +15,7 @@ Run:
 from __future__ import annotations
 
 import argparse
-import pickle
+import json
 from pathlib import Path
 
 import numpy as np
@@ -153,8 +153,17 @@ def main() -> None:  # pragma: no cover
     )
 
     model.save(out_dir / "slopewatch.keras")
-    with open(out_dir / "scaler.pkl", "wb") as f:
-        pickle.dump(scaler, f)
+    # Phase 2.1 §5: ship scalers as JSON. pickle.load is an RCE surface.
+    (out_dir / "scaler.json").write_text(json.dumps({
+        "mean": scaler.mean_.tolist(),
+        "scale": scaler.scale_.tolist(),
+        "features": FEATURES,
+    }, indent=2))
+    (out_dir / "metadata.json").write_text(json.dumps({
+        "features": FEATURES,
+        "sequence_length": SEQUENCE_LENGTH,
+        "physics_lambda": ModelSpec().physics_lambda,
+    }, indent=2))
 
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
