@@ -2,7 +2,7 @@
 
 import csv
 import io
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...core.db import get_db
 from ...core.deps import require_roles
 from ...models.audit import AuditLog
+from ...services.csv_safe import csv_safe
 
 router = APIRouter(prefix="/audit", tags=["audit"])
 
@@ -63,15 +64,20 @@ async def export_audit_csv(
     w.writerow(["id", "created_at", "actor_email", "actor_role", "action",
                 "target_type", "target_id", "site_id", "details"])
     for r in rows:
+        details = (r.details or "").replace("\n", " ").replace("\r", " ")
         w.writerow([
-            r.id,
+            csv_safe(r.id),
             r.created_at.isoformat() if r.created_at else "",
-            r.actor_email, r.actor_role, r.action,
-            r.target_type or "", r.target_id or "", r.site_id or "",
-            (r.details or "").replace("\n", " "),
+            csv_safe(r.actor_email),
+            csv_safe(r.actor_role),
+            csv_safe(r.action),
+            csv_safe(r.target_type),
+            csv_safe(r.target_id),
+            csv_safe(r.site_id),
+            csv_safe(details),
         ])
     buf.seek(0)
-    fname = f"geosentinel-audit-{datetime.utcnow().date()}.csv"
+    fname = f"geosentinel-audit-{datetime.now(timezone.utc).date()}.csv"
     return StreamingResponse(
         iter([buf.getvalue()]),
         media_type="text/csv",

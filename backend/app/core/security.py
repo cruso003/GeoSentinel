@@ -11,11 +11,26 @@ from .config import get_settings
 _pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
+class PasswordTooLongError(ValueError):
+    """Raised when a password exceeds bcrypt's 72-byte hard limit."""
+
+
+def _guard_length(plain: str) -> None:
+    limit = get_settings().max_password_bytes
+    if len(plain.encode("utf-8")) > limit:
+        raise PasswordTooLongError(
+            f"Password must be at most {limit} bytes (bcrypt truncates beyond this)."
+        )
+
+
 def hash_password(plain: str) -> str:
+    _guard_length(plain)
     return _pwd_ctx.hash(plain)
 
 
 def verify_password(plain: str, hashed: str) -> bool:
+    if len(plain.encode("utf-8")) > get_settings().max_password_bytes:
+        return False
     return _pwd_ctx.verify(plain, hashed)
 
 

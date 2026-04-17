@@ -3,8 +3,21 @@
 from functools import lru_cache
 from typing import List
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+# Values we refuse to start with in production. These are the defaults shipped
+# in the repo so a misconfigured deploy fails fast instead of booting with a
+# known-weak secret.
+_UNSAFE_JWT_SECRETS = {
+    "dev-secret-please-replace-please-please",
+    "change-me",
+    "secret",
+    "",
+}
+_UNSAFE_INFLUX_TOKENS = {"devtoken", "change-me", ""}
+_UNSAFE_GATEWAY_KEYS = {"replace-with-gateway-key", "change-me", ""}
 
 
 class Settings(BaseSettings):
@@ -22,6 +35,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = Field(default="HS256")
     access_token_expire_minutes: int = Field(default=60)
     refresh_token_expire_days: int = Field(default=30)
+    max_password_bytes: int = Field(default=72)  # bcrypt silently truncates beyond this.
 
     # Redis / Celery
     redis_url: str = Field(default="redis://localhost:6379/0")
@@ -53,6 +67,35 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> List[str]:
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
+
+    @property
+    def is_production(self) -> bool:
+        return self.env.lower() in ("production", "prod")
+
+    @model_validator(mode="after")
+    def _enforce_prod_hardening(self) -> "Settings":
+        if not self.is_production:
+            return self
+        errs: list[str] = []
+        if self.jwt_secret_key.strip() in _UNSAFE_JWT_SECRETS:
+            errs.append("jwt_secret_key is unset or matches a known-weak default")
+        if len(self.jwt_secret_key) < 32:
+            errs.append("jwt_secret_key must be at least 32 characters in production")
+        if self.influxdb_token.strip() in _UNSAFE_INFLUX_TOKENS:
+            errs.append("influxdb_token is unset or matches a known-weak default")
+        if self.mqtt_gateway_api_key.strip() in _UNSAFE_GATEWAY_KEYS:
+            errs.append("mqtt_gateway_api_key is unset or matches a known-weak default")
+        if not self.cors_origins:
+            errs.append("allowed_origins must list at least one HTTPS origin in production")
+        for origin in self.cors_origins:
+            if origin.startswith("http://") and "localhost" not in origin:
+                errs.append(f"allowed_origins entry {origin!r} must use HTTPS in production")
+        if errs:
+            raise ValueError(
+                "Refusing to boot with unsafe production configuration:\n  - "
+                + "\n  - ".join(errs)
+            )
+        return self
 
 
 @lru_cache(maxsize=1)

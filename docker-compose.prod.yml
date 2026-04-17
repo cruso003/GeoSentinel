@@ -136,8 +136,13 @@ services:
     image: nginx:1.27-alpine
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ./infra/nginx/edge.conf:/etc/nginx/conf.d/default.conf:ro
+      # Mount a directory containing fullchain.pem + privkey.pem.
+      # Use certbot / ACME in production; a self-signed cert is fine for
+      # smoke tests (see infra/nginx/README.md).
+      - ${TLS_CERT_DIR:-./infra/nginx/ssl}:/etc/nginx/ssl:ro
     depends_on:
       - backend
       - frontend
