@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useSensorStore } from '@/store/sensorStore';
 import { useAlertStore } from '@/store/alertStore';
 import { useAIStore } from '@/store/aiStore';
+import { useAuthStore } from '@/store/authStore';
 import type {
   Alert,
   EnvSensorReading,
@@ -12,10 +13,16 @@ import type {
 
 const WS_BASE = import.meta.env.VITE_WS_BASE_URL ?? '';
 
-function wsURL(siteId: string): string {
-  if (WS_BASE) return `${WS_BASE.replace(/\/$/, '')}/ws/${siteId}`;
-  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${proto}//${window.location.host}/ws/${siteId}`;
+function wsURL(siteId: string, token: string | null): string {
+  const base = WS_BASE
+    ? `${WS_BASE.replace(/\/$/, '')}/ws/${siteId}`
+    : (() => {
+        const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        return `${proto}//${window.location.host}/ws/${siteId}`;
+      })();
+  if (!token) return base;
+  const sep = base.includes('?') ? '&' : '?';
+  return `${base}${sep}token=${encodeURIComponent(token)}`;
 }
 
 // Opens `/ws/{siteId}` when enabled (live mode). Routes server messages into
@@ -40,7 +47,8 @@ export function useWebSocket(siteId: string, enabled: boolean): void {
 
     const connect = () => {
       if (disposed) return;
-      const ws = new WebSocket(wsURL(siteId));
+      const token = useAuthStore.getState().session?.access_token ?? null;
+      const ws = new WebSocket(wsURL(siteId, token));
       wsRef.current = ws;
 
       ws.onopen = () => {

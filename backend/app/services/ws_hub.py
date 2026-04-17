@@ -5,7 +5,7 @@ Spec §5.3 — messages pushed as JSON:
 """
 
 from collections import defaultdict
-from typing import Any, Dict, Set
+from typing import Any, Dict, Optional, Set
 
 from fastapi import WebSocket
 
@@ -14,8 +14,14 @@ class WSHub:
     def __init__(self) -> None:
         self._subs: Dict[str, Set[WebSocket]] = defaultdict(set)
 
-    async def connect(self, site_id: str, ws: WebSocket) -> None:
-        await ws.accept()
+    async def connect(
+        self,
+        site_id: str,
+        ws: WebSocket,
+        *,
+        subprotocol: Optional[str] = None,
+    ) -> None:
+        await ws.accept(subprotocol=subprotocol)
         self._subs[site_id].add(ws)
 
     def disconnect(self, site_id: str, ws: WebSocket) -> None:
