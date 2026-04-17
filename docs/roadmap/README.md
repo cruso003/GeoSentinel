@@ -20,16 +20,16 @@ Cross-cutting:
 Within 2.1, start with changes that are isolated and low-risk, leaving the
 auth-cookie migration for last because it touches both stacks:
 
-1. Strict prod config validator
-2. CSV formula-injection escape
-3. Edge nginx TLS + security headers
-4. Rate limit login + ingest
-5. JSON scalers (drop pickle)
-6. WebSocket JWT auth
-7. Per-gateway credentials + node scoping
-8. Refresh-token revocation + `/auth/logout`
-9. Audit log hash chain
-10. Move access token to memory + `HttpOnly` refresh cookie + CSRF
+1. Strict prod config validator ✅ `5603e77`
+2. CSV formula-injection escape ✅ `5603e77`
+3. Edge nginx TLS + security headers ✅ `5603e77`
+4. Rate limit login + ingest ✅ `5603e77`
+5. JSON scalers (drop pickle) ✅ `9e35b1f`
+6. WebSocket JWT auth ✅ `cc09340`
+7. Per-gateway credentials + node scoping ✅ `816e664`
+8. Refresh-token revocation + `/auth/logout` ✅ `2ab66a1`
+9. Audit log hash chain ✅ `cb1946c`
+10. `HttpOnly` refresh cookie + CSRF double-submit ✅ `c8aeeeb` (SPA migration follows)
 
 Mark items in each phase doc with `[x]` when they land; reference the commit
 in the checklist so the doc doubles as a traceability record.
