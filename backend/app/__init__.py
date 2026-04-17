@@ -1,0 +1,1 @@
+"""GeoSentinel backend application package."""

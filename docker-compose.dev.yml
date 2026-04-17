@@ -1,0 +1,105 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: geosentinel
+      POSTGRES_USER: geosentinel
+      POSTGRES_PASSWORD: geosentinel
+    ports:
+      - "5432:5432"
+    volumes:
+      - gs_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U geosentinel"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  influxdb:
+    image: influxdb:2.7-alpine
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: geosentinel
+      DOCKER_INFLUXDB_INIT_PASSWORD: geosentinel
+      DOCKER_INFLUXDB_INIT_ORG: geosentinel
+      DOCKER_INFLUXDB_INIT_BUCKET: sensor_data
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: devtoken
+    ports:
+      - "8086:8086"
+    volumes:
+      - gs_influx:/var/lib/influxdb2
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./infra/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://geosentinel:geosentinel@postgres:5432/geosentinel
+      INFLUXDB_URL: http://influxdb:8086
+      INFLUXDB_TOKEN: devtoken
+      INFLUXDB_ORG: geosentinel
+      INFLUXDB_BUCKET: sensor_data
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      MQTT_BROKER_HOST: mosquitto
+      MQTT_BROKER_PORT: 1883
+      ALLOWED_ORIGINS: http://localhost:5173
+      JWT_SECRET_KEY: dev-secret-please-replace-please-please
+    depends_on:
+      postgres:
+        condition: service_healthy
+      influxdb:
+        condition: service_started
+      redis:
+        condition: service_started
+    ports:
+      - "8000:8000"
+    command: >
+      bash -c "alembic upgrade head &&
+               python -m app.core.seed &&
+               uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    volumes:
+      - ./backend:/app
+
+  celery-worker:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://geosentinel:geosentinel@postgres:5432/geosentinel
+      CELERY_BROKER_URL: redis://redis:6379/1
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      - redis
+      - postgres
+    command: celery -A app.tasks.celery_app worker --beat -l info
+    volumes:
+      - ./backend:/app
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      VITE_API_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    command: npm run dev -- --host 0.0.0.0
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+volumes:
+  gs_pg:
+  gs_influx:
