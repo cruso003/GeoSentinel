@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-bg-deep text-slate-100;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-bg-deep;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-bg-line rounded-full;
+  }
+}
+
+@layer components {
+  .gs-card {
+    @apply rounded-xl border border-bg-line bg-bg-panel/80 backdrop-blur-sm shadow-lg shadow-black/20;
+  }
+  .gs-pill {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide;
+  }
+  .gs-button {
+    @apply inline-flex items-center gap-2 rounded-md border border-bg-line bg-bg-card px-3 py-1.5 text-sm font-medium text-slate-200 transition hover:border-brand-primary hover:text-white;
+  }
+  .gs-button-primary {
+    @apply inline-flex items-center gap-2 rounded-md bg-brand-primary px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-primary/90;
+  }
+  .gs-input {
+    @apply w-full rounded-md border border-bg-line bg-bg-deep px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-brand-primary focus:outline-none;
+  }
+}
+
+/* Leaflet on dark theme */
+.leaflet-container {
+  background: #0a1628;
+}
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: #152a47;
+  color: #f1f5f9;
+}
