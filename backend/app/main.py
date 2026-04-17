@@ -3,20 +3,39 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, status
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 
+from .api.health import router as health_router
 from .api.v1 import api_router
 from .core.config import get_settings
+from .core.logging import configure_logging, request_id_var
 from .core.security import decode_token
 from .services.influx import influx
 from .services.mqtt_client import mqtt_client
 from .services.ws_hub import hub
 
 log = logging.getLogger(__name__)
+
+
+class RequestIdMiddleware(BaseHTTPMiddleware):
+    """Attach a request id to every HTTP request for log correlation."""
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        rid = request.headers.get("x-request-id") or uuid.uuid4().hex
+        token = request_id_var.set(rid)
+        try:
+            response = await call_next(request)
+        finally:
+            request_id_var.reset(token)
+        response.headers["X-Request-Id"] = rid
+        return response
 
 
 @asynccontextmanager
@@ -45,6 +64,7 @@ def _extract_ws_token(ws: WebSocket) -> Optional[str]:
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    configure_logging(level="INFO")
     app = FastAPI(
         title="GeoSentinel API",
         version="1.0.0",
@@ -52,15 +72,28 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    app.add_middleware(RequestIdMiddleware)
+
+    # Phase 2.2 S12: enumerate methods + headers. Wildcards combined with
+    # `allow_credentials=True` are ignored by browsers anyway and give a
+    # false sense of laxity.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "X-Gateway-API-Key",
+            settings.csrf_header_name,
+        ],
+        expose_headers=["Content-Disposition", "Retry-After"],
+        max_age=600,
     )
 
     app.include_router(api_router)
+    app.include_router(health_router, prefix="/health")
 
     @app.get("/health", tags=["health"])
     async def health() -> dict[str, str]:

@@ -86,13 +86,21 @@ services:
                --graceful-timeout 30 --timeout 120"
     volumes:
       - gs_models:/app/ai_models
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health/ready || exit 1"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
     restart: unless-stopped
 
-  celery-worker:
+  # Phase 2.2: topology split. `beat` schedules, default/ml workers consume
+  # different queues, and nothing shares the scheduler lock.
+  celery-beat:
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
-    environment:
+    environment: &celery_env
       ENV: production
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-geosentinel}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-geosentinel}
       INFLUXDB_URL: http://influxdb:8086
@@ -118,7 +126,35 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
-    command: celery -A app.tasks.celery_app worker --beat -l info
+    command: celery -A app.tasks.celery_app beat -l info --pidfile=
+    restart: unless-stopped
+
+  celery-worker-default:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    environment: *celery_env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    command: celery -A app.tasks.celery_app worker -Q default -l info --concurrency=${CELERY_DEFAULT_CONCURRENCY:-4}
+    volumes:
+      - gs_models:/app/ai_models
+    restart: unless-stopped
+
+  celery-worker-ml:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    environment: *celery_env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    command: celery -A app.tasks.celery_app worker -Q ml -l info --concurrency=${CELERY_ML_CONCURRENCY:-2}
     volumes:
       - gs_models:/app/ai_models
     restart: unless-stopped
