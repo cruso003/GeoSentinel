@@ -11,7 +11,7 @@ interface AuthState {
   setSession: (session: AuthSession | null) => void;
   loginAsMock: (role: UserRole) => void;
   login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const MOCK_USERS: Record<UserRole, User> = {
@@ -54,7 +54,18 @@ export const useAuthStore = create<AuthState>()(
           throw err;
         }
       },
-      logout: () => set({ session: null, isAuthenticated: false, loginError: null }),
+      logout: async () => {
+        const session = useAuthStore.getState().session;
+        if (session?.refresh_token && !session.refresh_token.startsWith('mock-')) {
+          try {
+            await api.post('/auth/logout', { refresh_token: session.refresh_token });
+          } catch {
+            // Best-effort — always clear client state even if the server
+            // rejects (expired token, network hiccup, etc.).
+          }
+        }
+        set({ session: null, isAuthenticated: false, loginError: null });
+      },
     }),
     { name: 'gs.auth' },
   ),

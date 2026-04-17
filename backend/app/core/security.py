@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from uuid import uuid4
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -44,15 +45,16 @@ def _encode(data: dict, expires_delta: timedelta) -> str:
 def create_access_token(sub: str, role: str) -> str:
     settings = get_settings()
     return _encode(
-        {"sub": sub, "role": role, "type": "access"},
+        {"sub": sub, "role": role, "type": "access", "jti": uuid4().hex},
         timedelta(minutes=settings.access_token_expire_minutes),
     )
 
 
 def create_refresh_token(sub: str) -> str:
+    """Each refresh gets a fresh jti so revocation blocklists a single token."""
     settings = get_settings()
     return _encode(
-        {"sub": sub, "type": "refresh"},
+        {"sub": sub, "type": "refresh", "jti": uuid4().hex},
         timedelta(days=settings.refresh_token_expire_days),
     )
 

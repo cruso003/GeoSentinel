@@ -15,7 +15,7 @@ from ...core.security import (
 )
 from ...models.user import User
 from ...schemas.auth import AccessToken, LoginRequest, RefreshRequest, TokenPair, UserOut
-from ...services import audit
+from ...services import audit, token_blocklist
 from ...services.rate_limit import RateLimitExceeded, hit as rate_limit_hit
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -65,10 +65,30 @@ async def refresh(body: RefreshRequest, db: Annotated[AsyncSession, Depends(get_
     payload = decode_token(body.refresh_token)
     if not payload or payload.get("type") != "refresh":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+    jti = payload.get("jti")
+    if jti and await token_blocklist.is_revoked(jti):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token revoked")
     user = await db.get(User, payload["sub"])
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     return AccessToken(access_token=create_access_token(user.id, user.role))
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    body: RefreshRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    """Revoke a refresh token. Access tokens expire on their own (short-lived)."""
+    payload = decode_token(body.refresh_token)
+    if payload and payload.get("type") == "refresh" and payload.get("sub") == user.id:
+        jti = payload.get("jti")
+        if jti:
+            await token_blocklist.revoke(jti, token_blocklist.remaining_ttl_s(payload))
+    await audit.record(db, user=user, action="logout")
+    await db.commit()
+    return None
 
 
 @router.get("/me", response_model=UserOut)
