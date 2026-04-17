@@ -16,7 +16,7 @@ from ...schemas.sensors import (
     Resolution,
     SensorIngestPayload,
 )
-from ...services import gateway_auth
+from ...services import gateway_auth, metrics
 from ...services.alert_engine import evaluate_env, evaluate_geo
 from ...services.influx import influx
 from ...services.ws_hub import ws_hub
@@ -127,6 +127,11 @@ async def ingest(
 
     if alerts or gw is not None:
         await db.commit()
+
+    if payload.env:
+        metrics.ingest_rows_total.inc(len(payload.env), kind="env")
+    if payload.geo:
+        metrics.ingest_rows_total.inc(len(payload.geo), kind="geo")
 
     return {
         "accepted": {"env": len(payload.env), "geo": len(payload.geo)},

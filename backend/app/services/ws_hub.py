@@ -15,6 +15,8 @@ from typing import Any, Dict, Optional, Set
 
 from fastapi import WebSocket
 
+from . import metrics
+
 log = logging.getLogger(__name__)
 
 # Per-client send timeout. At our broadcast rate (~1/s per site), a
@@ -36,9 +38,11 @@ class WSHub:
     ) -> None:
         await ws.accept(subprotocol=subprotocol)
         self._subs[site_id].add(ws)
+        metrics.ws_subscribers.set(len(self._subs[site_id]), site_id=site_id)
 
     def disconnect(self, site_id: str, ws: WebSocket) -> None:
         self._subs[site_id].discard(ws)
+        metrics.ws_subscribers.set(len(self._subs[site_id]), site_id=site_id)
 
     def subscriber_count(self, site_id: str) -> int:
         return len(self._subs.get(site_id, set()))
