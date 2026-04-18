@@ -91,6 +91,8 @@ class ReportOut(BaseModel):
     status: str
     download_url: Optional[str] = None
     data_integrity_hash: Optional[str] = None
+    signature_b64: Optional[str] = None
+    signing_pubkey_hex: Optional[str] = None
     created_at: datetime
     generated_at: Optional[datetime] = None
 

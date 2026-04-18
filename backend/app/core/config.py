@@ -70,6 +70,15 @@ class Settings(BaseSettings):
     model_signing_pubkey: str = Field(default="")
     model_signing_required: bool = Field(default=False)
 
+    # Phase 3 §IFC PDF — offline signing of compliance reports. The private
+    # key lives on disk at ``report_signing_privkey_path`` (Ed25519 PEM,
+    # kept offline from the DB); the public key is published hex for
+    # auditors to verify signatures with. In dev we auto-generate an
+    # ephemeral key on first use; production requires both settings to be
+    # explicitly configured.
+    report_signing_privkey_path: str = Field(default="")
+    report_signing_pubkey: str = Field(default="")
+
     # Phase 2.4 §5 retraining. The weekly Celery task is a no-op until this
     # flag is flipped so the default `backend` image (which doesn't ship
     # TensorFlow) stays lean. Set to True in a dedicated `trainer` image.
@@ -110,6 +119,14 @@ class Settings(BaseSettings):
         if not self.model_signing_pubkey.strip():
             errs.append(
                 "model_signing_pubkey must be set in production (Ed25519 pubkey hex)"
+            )
+        if not self.report_signing_pubkey.strip():
+            errs.append(
+                "report_signing_pubkey must be set in production (Ed25519 pubkey hex)"
+            )
+        if not self.report_signing_privkey_path.strip():
+            errs.append(
+                "report_signing_privkey_path must point at the offline Ed25519 private key"
             )
         if errs:
             raise ValueError(

@@ -17,6 +17,7 @@ import numpy as np
 from ..schemas.ai import SlopeWatchPredictionOut
 from . import tflite_runtime
 from .influx import influx
+from .insar_ingest import latest_velocity_mm_yr, velocity_to_factor
 
 log = logging.getLogger(__name__)
 
@@ -94,11 +95,16 @@ async def run_slopewatch(site_id: str, slope_ids: List[str]) -> List[SlopeWatchP
             latest = await influx.latest("geo", slope_id)
             score = _fos_fallback(latest)
 
-        # Factor decomposition is approximate in Phase 2; the spec asks for
-        # contributions to sum to ~risk_score.
+        # Factor decomposition: pore / tilt / rainfall track the risk
+        # score linearly (Phase-2 approximation). ``insar_factor`` is
+        # pulled from the latest InSAR velocity via the calibrated
+        # ladder in ``insar_ingest``; when no InSAR series is ingested
+        # yet we fall back to the old 0.15 * score weighting so the PDF
+        # + dashboard still get a plausible bar.
         pore = 0.35 * score
         tilt = 0.25 * score
-        insar = 0.15 * score
+        velocity = await latest_velocity_mm_yr(slope_id)
+        insar = velocity_to_factor(velocity) if velocity is not None else 0.15 * score
         rain = max(0.0, min(1.0, score - pore - tilt - insar))
 
         out.append(SlopeWatchPredictionOut(

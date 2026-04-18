@@ -14,8 +14,10 @@ import {
 import { Card } from '@/components/ui/Card';
 import { Pill } from '@/components/ui/Pill';
 import { TimeSeriesChart } from '@/components/charts/TimeSeriesChart';
+import { InsarDisplacementCard } from '@/components/charts/InsarDisplacementCard';
 import { useAIStore } from '@/store/aiStore';
 import { useSensorStore } from '@/store/sensorStore';
+import { useUIStore } from '@/store/uiStore';
 import { MOCK_SLOPES } from '@/mock/site';
 import { format, parseISO } from 'date-fns';
 import { clsx } from '@/utils/clsx';
@@ -33,6 +35,7 @@ const TIER_TONE = {
 export function GeotechnicalTab() {
   const slopes = useAIStore((s) => s.slopeWatchPredictions);
   const geoHist = useSensorStore((s) => s.geoHistory);
+  const siteId = useUIStore((s) => s.activeSiteId);
 
   const sorted = useMemo(
     () =>
@@ -176,6 +179,8 @@ export function GeotechnicalTab() {
           </ResponsiveContainer>
         </Card>
       </div>
+
+      <InsarDisplacementCard siteId={siteId} slopeId={slopeId} />
     </div>
   );
 }

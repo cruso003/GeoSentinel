@@ -13,8 +13,7 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useAlertStore } from '@/store/alertStore';
-import { useUIStore } from '@/store/uiStore';
-import { MOCK_SITE } from '@/mock/site';
+import { SiteSwitcher } from './SiteSwitcher';
 import { clsx } from '@/utils/clsx';
 
 const NAV = [
@@ -33,8 +32,6 @@ export function Sidebar() {
   const logout = useAuthStore((s) => s.logout);
   const activeAlerts = useAlertStore((s) => s.activeAlerts);
   const critical = useAlertStore((s) => s.criticalAlertActive || s.evacuationAlertActive);
-  const setSiteId = useUIStore((s) => s.setActiveSiteId);
-  const activeSiteId = useUIStore((s) => s.activeSiteId);
 
   return (
     <aside className="hidden w-60 shrink-0 flex-col border-r border-bg-line bg-bg-panel md:flex">
@@ -48,16 +45,7 @@ export function Sidebar() {
         </div>
       </div>
 
-      <div className="px-3">
-        <label className="text-[10px] uppercase tracking-wider text-slate-500">Site</label>
-        <select
-          value={activeSiteId}
-          onChange={(e) => setSiteId(e.target.value)}
-          className="gs-input mt-1 text-xs"
-        >
-          <option value={MOCK_SITE.id}>{MOCK_SITE.name}</option>
-        </select>
-      </div>
+      <SiteSwitcher className="px-3" />
 
       <nav className="mt-4 flex-1 space-y-0.5 px-2">
         {NAV.map(({ to, label, icon: Icon, end }) => {

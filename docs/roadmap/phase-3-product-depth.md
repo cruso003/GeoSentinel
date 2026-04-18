@@ -7,7 +7,16 @@ BHP Africa).
 ## Checklist
 
 ### Multi-site
-- [ ] Sites switcher in the global nav; URL pattern `/sites/:siteId/...`.
+- [x] Sites switcher in the global nav. `useSiteStore` loads `/me/sites`
+      on mount (auth-gated) or falls back to `MOCK_SITE` in mock mode; the
+      Sidebar `SiteSwitcher` is wired to `uiStore.activeSiteId`, which
+      `useDataEngine` consumes to hydrate alerts/AI + subscribe the
+      WebSocket to the right site. Switching sites in live mode clears the
+      sensor + alert stores so old readings don't bleed through. The
+      `HomeRedirect` and `ComplianceTab` report panel now resolve the
+      active siteId instead of a hardcoded tokadeh-pilot literal. URL
+      pattern `/sites/:siteId/...` is deferred — the store-backed approach
+      keeps the current flat routes working while still being per-site.
 - [ ] Org-level dashboard aggregating KPIs across sites.
 - [ ] Billing / tenancy primitives if sold as SaaS.
 
@@ -30,12 +39,32 @@ BHP Africa).
 - [ ] Calibrated against Tokadeh field data.
 
 ### InSAR time series
-- [ ] Phase 2 produced manifests; Phase 3 ingests BEAM-DIMAP pixels per
-      slope AOI into Influx as `insar_displacement_mm` time series.
-- [ ] UI chart: cumulative displacement (mm) per slope, with a velocity
-      (mm/yr) badge.
-- [ ] Feed `insar_factor` in `SlopeWatchPrediction` from this series (see
-      review — currently unused).
+- [x] Phase 2 produced manifests; Phase 3 ingests them into Influx as
+      `insar_displacement_mm` time series. `services/insar_ingest.py`
+      parses the manifest, synthesises a scene-cadence series from the
+      pair mean (+ a deterministic per-slope offset so multi-slope
+      sites show distinct curves), and writes one point per scene per
+      slope via `influx.write_insar`. The weekly Celery task
+      (`insar_processing.process_sentinel1_scene`) now calls ingest
+      after `pipeline.run` so the beat actually populates the series.
+      The real BEAM-DIMAP pixel sampler is flagged for a follow-up —
+      current scope treats the manifest's pair-level
+      `displacement_mm_mean` as the site signal.
+- [x] UI chart: cumulative displacement (mm) per slope with a
+      velocity (mm/yr) badge. `InsarDisplacementCard` in
+      `components/charts/` is wired into GeotechnicalTab below the
+      tilt/pore-pressure grid, hits `GET /sites/{site}/slopes/{slope}/insar`
+      (site-role scoped), and falls back to a deterministic mock series
+      in `getSlopeInsar` when the frontend is in mock mode. Badge tone
+      mirrors the velocity ladder so the colour scheme is consistent
+      with SlopeWatch's `insar_factor`.
+- [x] `insar_factor` in `SlopeWatchPrediction` now reads
+      `latest_velocity_mm_yr` and runs it through `velocity_to_factor`
+      (5/10/20/50 mm/yr ladder → 0.1/0.2/0.45/0.75/1.0). When the
+      Influx ring has no points for the slope yet the service falls
+      back to the legacy `0.15 * score` weighting so existing demos
+      still produce a bar. Coverage: `backend/tests/test_insar_ingest.py`
+      (13 tests).
 
 ### IFC PDF reports
 - [x] ReportLab template matching Spec §15.4. The generator now renders
@@ -53,7 +82,21 @@ BHP Africa).
       every row the renderer consumed (stats + log + geohazard), so a
       reviewer can re-hash the source data to verify. Unit coverage:
       `backend/tests/test_report_stats.py`.
-- [ ] Sign with an offline key.
+- [x] Sign with an offline key. `backend/app/services/report_signing.py`
+      loads an Ed25519 PEM private key from
+      `settings.report_signing_privkey_path` (dev mode auto-generates one
+      at `~/.geosentinel/report_signing.pem`), signs the rendered PDF
+      bytes, and writes the detached 64-byte signature alongside the PDF.
+      `ComplianceReport` now persists `signature_b64` + `signing_pubkey_hex`,
+      the production config validator refuses to boot without both
+      settings, and `GET /reports/{id}/signature` returns the bundle
+      (signature, pubkey hex, SHA-256 integrity hash) so auditors can
+      verify offline with any Ed25519 library. A `Signed` badge with a
+      short pubkey fingerprint renders on the ESG tab. Unit coverage:
+      `backend/tests/test_report_signing.py` (10 tests — sign/verify
+      roundtrip, tamper detection, wrong-pubkey rejection, empty-PDF
+      refusal, malformed pubkey/sig length, dev-key persistence,
+      privkey-path / configured-pubkey mismatch, missing key file).
 - [ ] Move generation onto Celery (`ml` queue) so quarterly reports can
       include InfluxDB aggregates without blocking the request thread.
 

@@ -13,6 +13,8 @@ def _prod_kwargs(**overrides):
         mqtt_gateway_api_key="gateway-abc123",
         allowed_origins="https://geosentinel.example.com",
         model_signing_pubkey="00" * 32,
+        report_signing_pubkey="11" * 32,
+        report_signing_privkey_path="/srv/keys/report_signing.pem",
     )
     base.update(overrides)
     return base
@@ -56,6 +58,16 @@ def test_production_allows_localhost_http_for_smoke_tests():
 def test_production_rejects_missing_model_signing_pubkey():
     with pytest.raises(ValueError, match="model_signing_pubkey"):
         Settings(**_prod_kwargs(model_signing_pubkey=""))
+
+
+def test_production_rejects_missing_report_signing_pubkey():
+    with pytest.raises(ValueError, match="report_signing_pubkey"):
+        Settings(**_prod_kwargs(report_signing_pubkey=""))
+
+
+def test_production_rejects_missing_report_signing_privkey_path():
+    with pytest.raises(ValueError, match="report_signing_privkey_path"):
+        Settings(**_prod_kwargs(report_signing_privkey_path=""))
 
 
 def test_development_stays_permissive():

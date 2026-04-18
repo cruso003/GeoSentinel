@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Download, FileText } from 'lucide-react';
+import { Download, FileText, ShieldCheck } from 'lucide-react';
 import {
   Area,
   AreaChart,
@@ -105,6 +105,7 @@ function ScoreCardView({ card, light }: { card: ScoreCard; light: boolean }) {
 
 function ReportPanel({ light }: { light: boolean }) {
   const isMock = useAuthStore((s) => s.session?.access_token.startsWith('mock-') ?? true);
+  const siteId = useUIStore((s) => s.activeSiteId);
   const [type, setType] = useState<ReportType>('IFC_PERFORMANCE');
   const [periodStart, setPeriodStart] = useState(() => format(subDays(new Date(), 30), 'yyyy-MM-dd'));
   const [periodEnd, setPeriodEnd] = useState(() => format(new Date(), 'yyyy-MM-dd'));
@@ -129,16 +130,22 @@ function ReportPanel({ light }: { light: boolean }) {
         setProgress(s);
         await new Promise((r) => setTimeout(r, 600));
       }
+      const hex = (n: number) =>
+        Array.from({ length: n }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
       setReport({
         id: 'mock-' + Math.random().toString(36).slice(2, 8),
-        site_id: 'tokadeh-pilot',
+        site_id: siteId,
         report_type: type,
         period_start: `${periodStart}T00:00:00Z`,
         period_end: `${periodEnd}T23:59:59Z`,
         status: 'ready',
         download_url: null,
         generated_at: new Date().toISOString(),
-        data_integrity_hash: Array.from({ length: 64 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join(''),
+        data_integrity_hash: hex(64),
+        // Deterministic-looking Ed25519 shapes so the Signed badge renders
+        // under the walkthrough without calling the backend.
+        signature_b64: btoa(hex(64)).slice(0, 88),
+        signing_pubkey_hex: hex(64),
       });
       setStatus('ready');
       return;
@@ -147,7 +154,7 @@ function ReportPanel({ light }: { light: boolean }) {
     try {
       setProgress('Contacting backend...');
       const res = await generateReport({
-        site_id: 'tokadeh-pilot',
+        site_id: siteId,
         period_start: `${periodStart}T00:00:00Z`,
         period_end: `${periodEnd}T23:59:59Z`,
         report_type: type,
@@ -238,6 +245,9 @@ function ReportPanel({ light }: { light: boolean }) {
             SHA-256 {report.data_integrity_hash.slice(0, 12)}…
           </span>
         )}
+        {status === 'ready' && report?.signing_pubkey_hex && (
+          <SignedBadge pubkeyHex={report.signing_pubkey_hex} light={light} />
+        )}
       </div>
       {error && (
         <p className="mt-2 rounded-md bg-red-100/60 px-2 py-1 text-xs text-red-800 ring-1 ring-red-200">
@@ -245,6 +255,29 @@ function ReportPanel({ light }: { light: boolean }) {
         </p>
       )}
     </Card>
+  );
+}
+
+/** Renders an "Ed25519-signed" pill with a short fingerprint so the
+ * reviewer can eyeball whether the pubkey matches the one they have on
+ * file. Full signature + key is exposed via GET /reports/{id}/signature
+ * — this is just the at-a-glance trust cue. */
+function SignedBadge({ pubkeyHex, light }: { pubkeyHex: string; light: boolean }) {
+  const fp = `${pubkeyHex.slice(0, 4)}:${pubkeyHex.slice(4, 8)}…${pubkeyHex.slice(-4)}`;
+  return (
+    <span
+      title={`Ed25519 pubkey ${pubkeyHex}`}
+      className={clsx(
+        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1',
+        light
+          ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+          : 'bg-emerald-900/30 text-emerald-300 ring-emerald-500/40',
+      )}
+    >
+      <ShieldCheck className="h-3 w-3" />
+      Signed
+      <span className="font-mono opacity-80">{fp}</span>
+    </span>
   );
 }
 

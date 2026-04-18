@@ -23,6 +23,21 @@ export async function listReports(): Promise<ComplianceReport[]> {
   return api.get('/reports');
 }
 
+export interface ReportSignatureBundle {
+  report_id: string;
+  signature_b64: string;
+  pubkey_hex: string;
+  pdf_sha256: string;
+}
+
+/** Fetches the detached Ed25519 signature bundle for an auditor to verify
+ * the PDF offline. Backend returns 404 for unsigned/legacy reports. */
+export async function getReportSignature(
+  reportId: string,
+): Promise<ReportSignatureBundle> {
+  return api.get(`/reports/${reportId}/signature`);
+}
+
 /** Fetches the PDF with the current session's bearer token and triggers a
  * browser download. `<a href>` can't attach auth headers, so this has to go
  * through fetch → Blob → object URL. */
