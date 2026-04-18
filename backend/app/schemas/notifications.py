@@ -31,6 +31,17 @@ class SubscriptionOut(BaseModel):
         from_attributes = True
 
 
+class ProfileOut(BaseModel):
+    """User-visible profile — includes ``phone_number`` so the frontend can
+    pre-fill the edit form without re-exposing it on every /auth response."""
+
+    id: str
+    name: str
+    email: EmailStr
+    phone_number: str | None
+    role: str
+
+
 class ProfileUpdate(BaseModel):
     """Profile fields a user is allowed to edit for themselves. ``role`` and
     ``email`` are intentionally absent — those changes are admin-only."""

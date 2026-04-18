@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   LogOut,
   Mountain,
+  UserCog,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useAlertStore } from '@/store/alertStore';
@@ -23,6 +24,7 @@ const NAV = [
   { to: '/operations/twin', label: 'Digital Twin', icon: Boxes },
   { to: '/operations/alerts', label: 'Alerts', icon: AlertTriangle },
   { to: '/operations/nodes', label: 'Node Health', icon: CpuIcon },
+  { to: '/operations/profile', label: 'Profile', icon: UserCog },
 ];
 
 export function Sidebar() {

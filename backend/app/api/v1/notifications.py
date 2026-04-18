@@ -14,6 +14,7 @@ from ...models.notifications import NotificationSubscription
 from ...models.site import Site
 from ...models.user import User
 from ...schemas.notifications import (
+    ProfileOut,
     ProfileUpdate,
     SubscriberRowOut,
     SubscriptionIn,
@@ -32,7 +33,20 @@ esg_admin = require_roles("esg_admin")
 # --- Profile (notification-relevant fields) ----------------------------------
 
 
-@router.patch("/profile", status_code=status.HTTP_200_OK)
+@router.get("/profile", response_model=ProfileOut)
+async def get_profile(
+    user: Annotated[User, Depends(get_current_user)],
+):
+    return ProfileOut(
+        id=user.id,
+        name=user.name,
+        email=user.email,
+        phone_number=user.phone_number,
+        role=user.role,
+    )
+
+
+@router.patch("/profile", response_model=ProfileOut)
 async def update_profile(
     body: ProfileUpdate,
     user: Annotated[User, Depends(get_current_user)],
@@ -46,13 +60,13 @@ async def update_profile(
         user.phone_number = body.phone_number
     await audit.record(db, user=user, action="update_profile")
     await db.commit()
-    return {
-        "id": user.id,
-        "name": user.name,
-        "email": user.email,
-        "phone_number": user.phone_number,
-        "role": user.role,
-    }
+    return ProfileOut(
+        id=user.id,
+        name=user.name,
+        email=user.email,
+        phone_number=user.phone_number,
+        role=user.role,
+    )
 
 
 # --- Subscriptions (self-service) --------------------------------------------

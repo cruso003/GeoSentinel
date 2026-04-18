@@ -3,11 +3,10 @@
 Goal: actually deliver CRITICAL alerts to the right humans, and scope each
 user to the sites they are allowed to see.
 
-Status: **backend landed.** Frontend Profile / admin subscribers page is the
-remaining follow-up — the API surface is complete, typed, and seeded so the
-UI work is a straight render. Commit: `e1e6dee` (subscriptions schema,
+Status: **landed.** Frontend Profile + ESG Subscribers pages now render the
+existing API surface. Commits: `e1e6dee` (subscriptions schema,
 `require_site_role`, escalation sweep, local-language templates,
-profile/subscription/test-alert/admin endpoints).
+profile/subscription/test-alert/admin endpoints), + the Phase 2.3 UI slice.
 
 ## Checklist
 
@@ -31,14 +30,17 @@ profile/subscription/test-alert/admin endpoints).
       tests in `backend/tests/test_notifications.py`.
 
 ### UI
-- [ ] Profile page: notification preferences toggle per site + channel.
-      *(API + types shipped; dashboard route is the last step — planned
-      alongside the Phase 2.3 UI slice.)*
-- [ ] ESG admin page: impersonate-free view of who is subscribed to what.
-      *(Backed by `GET /admin/subscribers`.)*
-- [ ] Test-alert button (dispatches a dummy WARNING to the current user).
-      *(Backend at `POST /subscriptions/test` — wire the button in the
-      profile page.)*
+- [x] Profile page at `/operations/profile`
+      (`frontend/src/views/OperationsView/ProfileTab.tsx`): edits name +
+      E.164 phone (`PATCH /profile`), and toggles a per-site × channel
+      matrix with a minimum-severity select. Mock mode is local-only
+      (nothing persists) so scenario walkthroughs stay side-effect free.
+- [x] ESG admin Subscribers tab at `/esg/subscribers` (`SubscribersTab.tsx`):
+      searchable + filterable table backed by `GET /admin/subscribers`,
+      with CSV export generated client-side.
+- [x] Test-alert button per channel row. Hits `POST /subscriptions/test`
+      with the current site + channel; surfaces a status banner with the
+      provider-noop case called out explicitly.
 
 ### Per-site RBAC
 - [x] `user_sites(user_id, site_id, role)` join table, migrated + seeded.
