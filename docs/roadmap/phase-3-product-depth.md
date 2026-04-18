@@ -7,7 +7,16 @@ BHP Africa).
 ## Checklist
 
 ### Multi-site
-- [ ] Sites switcher in the global nav; URL pattern `/sites/:siteId/...`.
+- [x] Sites switcher in the global nav. `useSiteStore` loads `/me/sites`
+      on mount (auth-gated) or falls back to `MOCK_SITE` in mock mode; the
+      Sidebar `SiteSwitcher` is wired to `uiStore.activeSiteId`, which
+      `useDataEngine` consumes to hydrate alerts/AI + subscribe the
+      WebSocket to the right site. Switching sites in live mode clears the
+      sensor + alert stores so old readings don't bleed through. The
+      `HomeRedirect` and `ComplianceTab` report panel now resolve the
+      active siteId instead of a hardcoded tokadeh-pilot literal. URL
+      pattern `/sites/:siteId/...` is deferred — the store-backed approach
+      keeps the current flat routes working while still being per-site.
 - [ ] Org-level dashboard aggregating KPIs across sites.
 - [ ] Billing / tenancy primitives if sold as SaaS.
 

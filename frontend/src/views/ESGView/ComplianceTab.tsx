@@ -105,6 +105,7 @@ function ScoreCardView({ card, light }: { card: ScoreCard; light: boolean }) {
 
 function ReportPanel({ light }: { light: boolean }) {
   const isMock = useAuthStore((s) => s.session?.access_token.startsWith('mock-') ?? true);
+  const siteId = useUIStore((s) => s.activeSiteId);
   const [type, setType] = useState<ReportType>('IFC_PERFORMANCE');
   const [periodStart, setPeriodStart] = useState(() => format(subDays(new Date(), 30), 'yyyy-MM-dd'));
   const [periodEnd, setPeriodEnd] = useState(() => format(new Date(), 'yyyy-MM-dd'));
@@ -131,7 +132,7 @@ function ReportPanel({ light }: { light: boolean }) {
       }
       setReport({
         id: 'mock-' + Math.random().toString(36).slice(2, 8),
-        site_id: 'tokadeh-pilot',
+        site_id: siteId,
         report_type: type,
         period_start: `${periodStart}T00:00:00Z`,
         period_end: `${periodEnd}T23:59:59Z`,
@@ -147,7 +148,7 @@ function ReportPanel({ light }: { light: boolean }) {
     try {
       setProgress('Contacting backend...');
       const res = await generateReport({
-        site_id: 'tokadeh-pilot',
+        site_id: siteId,
         period_start: `${periodStart}T00:00:00Z`,
         period_end: `${periodEnd}T23:59:59Z`,
         report_type: type,

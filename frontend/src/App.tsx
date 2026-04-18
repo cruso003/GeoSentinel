@@ -1,5 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
+import { useSiteStore } from '@/store/siteStore';
+import { useUIStore } from '@/store/uiStore';
 import type { UserRole } from '@/types';
 import { LoginView } from '@/views/LoginView/LoginView';
 import { OperationsView } from '@/views/OperationsView/OperationsView';
@@ -7,6 +9,7 @@ import { ESGView } from '@/views/ESGView/ESGView';
 import { CommunityView } from '@/views/CommunityView/CommunityView';
 import { useDataEngine } from '@/hooks/useDataEngine';
 import { useDemoParams } from '@/hooks/useDemoParams';
+import { useSiteBootstrap } from '@/hooks/useSiteBootstrap';
 import { DemoBanner } from '@/components/ui/DemoBanner';
 import { ScenarioControl } from '@/components/ui/ScenarioControl';
 import { CriticalAlertOverlay } from '@/components/alerts/CriticalAlertOverlay';
@@ -27,14 +30,23 @@ function ProtectedRoute({
 
 function HomeRedirect() {
   const session = useAuthStore((s) => s.session);
-  if (!session) return <Navigate to="/community/tokadeh-pilot" replace />;
-  if (session.user.role === 'community') return <Navigate to="/community/tokadeh-pilot" replace />;
+  const sites = useSiteStore((s) => s.sites);
+  const activeSiteId = useUIStore((s) => s.activeSiteId);
+  // Community landing uses activeSite; fall back to the first accessible
+  // site, then to the legacy tokadeh-pilot id so the route still resolves
+  // when /me/sites hasn't responded yet.
+  const communitySiteId = activeSiteId || sites[0]?.id || 'tokadeh-pilot';
+  if (!session) return <Navigate to={`/community/${communitySiteId}`} replace />;
+  if (session.user.role === 'community') {
+    return <Navigate to={`/community/${communitySiteId}`} replace />;
+  }
   if (session.user.role === 'esg_admin') return <Navigate to="/esg" replace />;
   return <Navigate to="/operations" replace />;
 }
 
 export default function App() {
   useDemoParams();
+  useSiteBootstrap();
   useDataEngine();
 
   return (
