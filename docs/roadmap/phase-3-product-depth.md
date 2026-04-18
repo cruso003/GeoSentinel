@@ -110,6 +110,15 @@ BHP Africa).
 - [ ] Lighthouse CI gate > 90 on dashboards.
 - [ ] Backend integration tests ≥ 70 % coverage of `services/`.
 - [ ] CI green before every merge to `main`.
+- [ ] Fix Celery event-loop churn. Each beat-fired task wraps its async
+      service in `asyncio.run(...)`, which tears the loop down while
+      asyncpg's pool still holds connections. The first tick logs
+      `RuntimeError: Event loop is closed` + `coroutine 'Connection._cancel'
+      was never awaited` and Celery retries once before succeeding. Works,
+      but fills the log with red. Fix options: (a) build a dedicated
+      sync-driver `SessionLocal` for Celery paths, (b) use
+      `celery[asyncio]` / a persistent loop per worker, or (c) close the
+      asyncpg engine inside the coroutine before `asyncio.run` returns.
 
 ### Research
 - [ ] Whitepaper: "Physics-informed slope monitoring at Tokadeh" with real
