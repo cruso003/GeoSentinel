@@ -82,7 +82,21 @@ BHP Africa).
       every row the renderer consumed (stats + log + geohazard), so a
       reviewer can re-hash the source data to verify. Unit coverage:
       `backend/tests/test_report_stats.py`.
-- [ ] Sign with an offline key.
+- [x] Sign with an offline key. `backend/app/services/report_signing.py`
+      loads an Ed25519 PEM private key from
+      `settings.report_signing_privkey_path` (dev mode auto-generates one
+      at `~/.geosentinel/report_signing.pem`), signs the rendered PDF
+      bytes, and writes the detached 64-byte signature alongside the PDF.
+      `ComplianceReport` now persists `signature_b64` + `signing_pubkey_hex`,
+      the production config validator refuses to boot without both
+      settings, and `GET /reports/{id}/signature` returns the bundle
+      (signature, pubkey hex, SHA-256 integrity hash) so auditors can
+      verify offline with any Ed25519 library. A `Signed` badge with a
+      short pubkey fingerprint renders on the ESG tab. Unit coverage:
+      `backend/tests/test_report_signing.py` (10 tests — sign/verify
+      roundtrip, tamper detection, wrong-pubkey rejection, empty-PDF
+      refusal, malformed pubkey/sig length, dev-key persistence,
+      privkey-path / configured-pubkey mismatch, missing key file).
 - [ ] Move generation onto Celery (`ml` queue) so quarterly reports can
       include InfluxDB aggregates without blocking the request thread.
 

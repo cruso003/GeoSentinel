@@ -5,14 +5,24 @@ Phase 3 pulls real stats from the alert log + slope-watch predictions via
 :func:`app.services.report_stats.collect_compliance_stats`. When no report
 data is supplied the renderer falls back to a deterministic synthetic set —
 kept only so local smoke-tests still produce a non-trivial PDF.
+
+Output artefacts per report id::
+
+    {report_id}.pdf      - the document
+    {report_id}.pdf.sig  - raw Ed25519 detached signature (64 bytes)
+
+See :mod:`app.services.report_signing` for the key-management and
+verification path.
 """
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
+import logging
 import os
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable
@@ -30,7 +40,25 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from .report_signing import ReportSigningError, sign_pdf
 from .report_stats import ExceedanceLogRow, GeohazardSummary, ReportData, StatsRow
+
+log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class GeneratedReport:
+    """Return value of :func:`generate_report`.
+
+    ``signature_b64`` / ``signing_pubkey_hex`` are ``None`` when signing
+    failed in a non-production environment (see ``report_signing.py``);
+    production surfaces the failure via the config validator instead.
+    """
+
+    path: Path
+    integrity_hash: str
+    signature_b64: str | None
+    signing_pubkey_hex: str | None
 
 REPORTS_DIR = Path(os.environ.get("GEOSENTINEL_REPORTS_DIR", "/tmp/geosentinel-reports"))
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -81,12 +109,20 @@ def generate_report(
     period_end: datetime,
     report_type: str,
     data: ReportData | None = None,
-) -> tuple[Path, str]:
-    """Write a PDF and return (path, sha256-hash).
+) -> GeneratedReport:
+    """Render the PDF, sign it, and return a :class:`GeneratedReport`.
 
     ``data`` is the structured payload from :func:`collect_compliance_stats`.
     When absent, the renderer uses the synthetic fallback so an operator can
     still generate a PDF before any alerts have landed.
+
+    The detached Ed25519 signature is written beside the PDF and also
+    returned base64-encoded so the caller can persist it in
+    ``ComplianceReport.signature_b64``. When signing fails (missing
+    cryptography in dev, misconfigured key) the PDF is still emitted —
+    the signature-related return fields are ``None`` and a warning is
+    logged. Production enforces signing presence upstream at settings
+    validation.
     """
 
     report_data = data or _synthetic_fallback()
@@ -173,8 +209,26 @@ def generate_report(
     )
 
     doc.build(story)
-    out_path.write_bytes(buffer.getvalue())
-    return out_path, integrity
+    pdf_bytes = buffer.getvalue()
+    out_path.write_bytes(pdf_bytes)
+
+    # Sign the PDF bytes *after* the doc is built — the signature binds
+    # to the exact bytes the reviewer will download.
+    signature_b64: str | None = None
+    pubkey_hex: str | None = None
+    try:
+        sig, pubkey_hex = sign_pdf(pdf_bytes)
+        (out_path.with_suffix(out_path.suffix + ".sig")).write_bytes(sig)
+        signature_b64 = base64.b64encode(sig).decode("ascii")
+    except ReportSigningError as e:
+        log.warning("Report %s generated but not signed: %s", report_id, e)
+
+    return GeneratedReport(
+        path=out_path,
+        integrity_hash=integrity,
+        signature_b64=signature_b64,
+        signing_pubkey_hex=pubkey_hex,
+    )
 
 
 # --- helpers ---------------------------------------------------------

@@ -193,23 +193,23 @@ def test_generate_report_renders_non_empty_pdf_and_stable_hash(tmp_path, monkeyp
     start = datetime(2026, 3, 1, tzinfo=UTC)
     end = datetime(2026, 3, 31, tzinfo=UTC)
 
-    path, integrity = generate_report(
+    result = generate_report(
         report_id="r1",
         site_name="TokadehTest",
         period_start=start,
         period_end=end,
         report_type="IFC_PERFORMANCE",
     )
-    assert path.exists()
-    assert path.stat().st_size > 1000  # sanity — a real PDF header + body
-    assert len(integrity) == 64
+    assert result.path.exists()
+    assert result.path.stat().st_size > 1000  # sanity — a real PDF header + body
+    assert len(result.integrity_hash) == 64
 
     # Deterministic when inputs are identical.
-    _, integrity2 = generate_report(
+    result2 = generate_report(
         report_id="r2",
         site_name="TokadehTest",
         period_start=start,
         period_end=end,
         report_type="IFC_PERFORMANCE",
     )
-    assert integrity == integrity2
+    assert result.integrity_hash == result2.integrity_hash

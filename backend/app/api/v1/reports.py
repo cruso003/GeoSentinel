@@ -81,7 +81,7 @@ async def generate(
             period_start=body.period_start,
             period_end=body.period_end,
         )
-        path, integrity = generate_report(
+        result = generate_report(
             report_id=report.id,
             site_name=site.name,
             period_start=body.period_start,
@@ -91,12 +91,16 @@ async def generate(
         )
         report.status = "ready"
         report.download_url = f"/api/v1/reports/{report.id}/download"
-        report.data_integrity_hash = integrity
+        report.data_integrity_hash = result.integrity_hash
+        report.signature_b64 = result.signature_b64
+        report.signing_pubkey_hex = result.signing_pubkey_hex
         report.generated_at = datetime.now(timezone.utc)
     except Exception as exc:  # pragma: no cover - defensive
         report.status = "failed"
         report.download_url = None
         report.data_integrity_hash = None
+        report.signature_b64 = None
+        report.signing_pubkey_hex = None
         _ = exc
     await db.commit()
     await db.refresh(report)
@@ -132,3 +136,30 @@ async def download_report(
         media_type="application/pdf",
         filename=f"GeoSentinel_{r.report_type}_{r.period_start.date()}_{r.period_end.date()}.pdf",
     )
+
+
+@router.get("/{report_id}/signature")
+async def report_signature(
+    report_id: str,
+    _=Depends(esg_admin_only),
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+):
+    """Detached Ed25519 signature + pubkey hex for external auditors.
+
+    Auditors download the PDF from ``/download``, fetch the signature from
+    this endpoint, and verify independently. ``pdf_sha256`` is the
+    integrity hash that was written into the PDF itself (Executive Summary
+    section) so a reviewer can cross-check without re-hashing the bytes.
+    """
+
+    r = await db.get(ComplianceReport, report_id)
+    if not r or r.status != "ready":
+        raise HTTPException(status_code=404, detail="Report not available")
+    if not r.signature_b64 or not r.signing_pubkey_hex:
+        raise HTTPException(status_code=404, detail="Report not signed")
+    return {
+        "report_id": r.id,
+        "signature_b64": r.signature_b64,
+        "pubkey_hex": r.signing_pubkey_hex,
+        "pdf_sha256": r.data_integrity_hash,
+    }

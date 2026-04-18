@@ -217,4 +217,9 @@ export interface ComplianceReport {
   download_url: string | null;
   generated_at: string | null;
   data_integrity_hash: string | null;
+  // Phase 3 §IFC PDF offline signing — base64 Ed25519 signature + 64-char
+  // hex pubkey. Null for legacy pre-signing reports or when signing failed
+  // in a non-production environment.
+  signature_b64: string | null;
+  signing_pubkey_hex: string | null;
 }
