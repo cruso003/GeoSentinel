@@ -167,6 +167,15 @@ ws_subscribers = gauge(
 login_failures_total = counter(
     "gs_login_failures_total", "Failed /auth/login attempts (bad creds or rate-limited)."
 )
+model_psi = gauge(
+    "gs_model_psi",
+    "Population Stability Index per (model, feature). >0.2 means drift.",
+)
+model_confidence = histogram(
+    "gs_model_confidence",
+    "Predicted probability distribution per model — watch the right tail collapse.",
+    buckets=(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0),
+)
 
 
 def reset_for_tests() -> None:

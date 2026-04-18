@@ -6,9 +6,13 @@ tracked, evaluated, drift-monitored production models.
 ## Checklist
 
 ### Label layer
+- [x] `training_labels` table + Alembic `0006` + admin CRUD + CSV importer
+      with per-row error reporting (`backend/app/api/v1/training_labels.py`,
+      `backend/app/models/training_label.py`, migration
+      `0006_training_labels`). `source ∈ {field, ifc_report, insar,
+      synthetic}` so the evaluator can restrict to real labels.
 - [ ] Ingest historical IFC incident reports and field observations from
-      Tokadeh into `training_label(site_id, node_id, parameter, t_start,
-      t_end, label, source)`.
+      Tokadeh into the table (depends on data access).
 - [ ] Replace synthetic labels in `ai/enviroguard/data/export.py` with real
       labels where available; keep synthetic only as augmentation flagged in
       metadata.
@@ -22,11 +26,15 @@ tracked, evaluated, drift-monitored production models.
 - [ ] Tagged model promotion (`Staging` → `Production`).
 
 ### Evaluation harness
-- [ ] `ai/evaluate.py` with ROC-AUC, PR-AUC, calibration (Brier), per-node
-      fairness, false-positive rate at fixed recall.
-- [ ] Fixed evaluation split with the last 4 weeks held out.
+- [x] `backend/app/services/evaluation.py` — stdlib ROC-AUC
+      (Mann-Whitney-U with tie handling), PR-AUC (trapezoidal on
+      descending-score), Brier, calibration gap, and
+      `evaluate_with_slices(slices=…)` for per-node / per-parameter fairness
+      reports. Degenerate slices return `None` rather than raising.
+- [ ] Fixed evaluation split with the last 4 weeks held out (needs real
+      label data).
 - [ ] Evaluation gates: new model must beat current in prod on both AUCs and
-      not regress > 2 % on any per-node slice.
+      not regress > 2 % on any per-node slice (needs retraining loop).
 
 ### Explanations
 - [ ] SHAP values for EnviroGuard (TreeExplainer won't apply — use
@@ -36,16 +44,26 @@ tracked, evaluated, drift-monitored production models.
       so the `pore / tilt / insar / rainfall` breakdown becomes honest.
 
 ### Model signing + artifact integrity
-- [ ] Sign `.tflite` + `scaler.json` + `metadata.json` with a long-lived
-      offline key.
-- [ ] `tflite_runtime.load` verifies signature before loading.
-- [ ] Reject unsigned models in `ENV=production`.
+- [x] Ed25519 detached signatures on `.tflite` artifacts
+      (`<name>.tflite.sig`, 64 raw bytes). `tflite_runtime._verify_signature`
+      checks every load.
+- [x] Reject unsigned / mis-signed models when `ENV=production` or
+      `model_signing_required=true`. The prod-config validator now fails
+      boot without `model_signing_pubkey`.
+- [ ] Extend signing to `scaler.json` + `metadata.json` (single manifest
+      signature) once the training pipeline emits them together.
 
 ### Drift monitoring
-- [ ] Daily Celery task computes PSI (population stability index) per
-      feature against the training distribution.
-- [ ] Prometheus gauge `gs_model_psi{model,feature}`; Grafana alert > 0.2.
-- [ ] Per-prediction confidence histogram.
+- [x] PSI (Population Stability Index) with reference-quantile binning and
+      `_EPS` smoothing (`backend/app/services/drift.py`).
+- [x] Daily Celery task `app.tasks.drift.sweep_model_drift` (02:30 UTC)
+      compares 24 h current vs 7-day reference window on both EnviroGuard
+      and SlopeWatch outputs.
+- [x] Prometheus gauge `gs_model_psi{model,feature}` — alert > 0.2 per
+      the roadmap threshold. Grafana dashboard is a follow-up.
+- [x] Per-prediction confidence histogram
+      `gs_model_confidence{model}` (custom buckets 0.1…1.0) to catch the
+      "everything is 0.5 now" failure mode.
 
 ### Retraining loop
 - [ ] Weekly Celery task (gated) retrains on the latest window.

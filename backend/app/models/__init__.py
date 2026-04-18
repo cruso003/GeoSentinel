@@ -6,6 +6,7 @@ from .ai import EnviroGuardPrediction, SlopeWatchPrediction
 from .audit import AuditLog
 from .gateway import SensorGateway
 from .notifications import EscalationStep, NotificationSubscription, UserSite
+from .training_label import TrainingLabel
 
 __all__ = [
     "User",
@@ -21,4 +22,5 @@ __all__ = [
     "EscalationStep",
     "NotificationSubscription",
     "UserSite",
+    "TrainingLabel",
 ]

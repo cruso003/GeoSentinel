@@ -73,3 +73,110 @@ def test_load_scaler_rejects_shape_mismatch(tmp_path: Path, caplog):
 def test_load_missing_model_returns_none(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("GEOSENTINEL_MODEL_DIR", str(tmp_path))
     assert tr.load("enviroguard") is None
+
+
+# --- Phase 2.4 §4: Ed25519 signature enforcement ----------------------
+
+
+def _make_keypair():
+    crypto = pytest.importorskip(
+        "cryptography.hazmat.primitives.asymmetric.ed25519"
+    )
+    priv = crypto.Ed25519PrivateKey.generate()
+    from cryptography.hazmat.primitives import serialization
+
+    pub_bytes = priv.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    return priv, pub_bytes.hex()
+
+
+def _reset_settings_cache():
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+
+
+def test_verify_signature_accepts_valid_signature(tmp_path: Path, monkeypatch):
+    priv, pub_hex = _make_keypair()
+    model = tmp_path / "enviroguard.tflite"
+    model.write_bytes(b"fake-tflite-weights")
+    (model.parent / "enviroguard.tflite.sig").write_bytes(
+        priv.sign(model.read_bytes())
+    )
+    monkeypatch.setenv("MODEL_SIGNING_PUBKEY", pub_hex)
+    monkeypatch.setenv("MODEL_SIGNING_REQUIRED", "true")
+    _reset_settings_cache()
+    try:
+        assert tr._verify_signature(model) is True
+    finally:
+        _reset_settings_cache()
+
+
+def test_verify_signature_rejects_tampered_model(tmp_path: Path, monkeypatch):
+    priv, pub_hex = _make_keypair()
+    model = tmp_path / "enviroguard.tflite"
+    model.write_bytes(b"original")
+    (model.parent / "enviroguard.tflite.sig").write_bytes(
+        priv.sign(b"original")
+    )
+    # Tamper after signing.
+    model.write_bytes(b"poisoned-weights")
+    monkeypatch.setenv("MODEL_SIGNING_PUBKEY", pub_hex)
+    monkeypatch.setenv("MODEL_SIGNING_REQUIRED", "true")
+    _reset_settings_cache()
+    try:
+        with pytest.raises(tr.ModelSignatureError):
+            tr._verify_signature(model)
+    finally:
+        _reset_settings_cache()
+
+
+def test_verify_signature_requires_signature_when_enforced(
+    tmp_path: Path, monkeypatch
+):
+    _, pub_hex = _make_keypair()
+    model = tmp_path / "enviroguard.tflite"
+    model.write_bytes(b"weights")
+    monkeypatch.setenv("MODEL_SIGNING_PUBKEY", pub_hex)
+    monkeypatch.setenv("MODEL_SIGNING_REQUIRED", "true")
+    _reset_settings_cache()
+    try:
+        with pytest.raises(tr.ModelSignatureError):
+            tr._verify_signature(model)
+    finally:
+        _reset_settings_cache()
+
+
+def test_verify_signature_dev_mode_permits_unsigned(
+    tmp_path: Path, monkeypatch, caplog
+):
+    # No pubkey, no enforcement → returns False and logs a warning.
+    model = tmp_path / "enviroguard.tflite"
+    model.write_bytes(b"weights")
+    monkeypatch.delenv("MODEL_SIGNING_PUBKEY", raising=False)
+    monkeypatch.delenv("MODEL_SIGNING_REQUIRED", raising=False)
+    monkeypatch.setenv("ENV", "development")
+    _reset_settings_cache()
+    try:
+        with caplog.at_level("WARNING"):
+            assert tr._verify_signature(model) is False
+    finally:
+        _reset_settings_cache()
+
+
+def test_verify_signature_rejects_malformed_pubkey(
+    tmp_path: Path, monkeypatch
+):
+    model = tmp_path / "m.tflite"
+    model.write_bytes(b"weights")
+    (model.parent / "m.tflite.sig").write_bytes(b"\x00" * 64)
+    monkeypatch.setenv("MODEL_SIGNING_PUBKEY", "nothex!!")
+    monkeypatch.setenv("MODEL_SIGNING_REQUIRED", "true")
+    _reset_settings_cache()
+    try:
+        with pytest.raises(tr.ModelSignatureError):
+            tr._verify_signature(model)
+    finally:
+        _reset_settings_cache()

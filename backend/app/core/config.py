@@ -1,11 +1,9 @@
 """Application configuration via Pydantic settings."""
 
 from functools import lru_cache
-from typing import List
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
 
 # Values we refuse to start with in production. These are the defaults shipped
 # in the repo so a misconfigured deploy fails fast instead of booting with a
@@ -64,6 +62,14 @@ class Settings(BaseSettings):
     allowed_origins: str = Field(default="http://localhost:5173")
     enable_mock_stream: bool = Field(default=True)
 
+    # MLOps (Phase 2.4 §4). Model artifacts are signed out-of-band with
+    # Ed25519; the backend enforces signatures in production so an attacker
+    # with write access to the model volume can't swap in a poisoned .tflite.
+    # ``model_signing_pubkey`` is a hex-encoded 32-byte Ed25519 public key.
+    # When unset in non-prod, loading is permitted but warns.
+    model_signing_pubkey: str = Field(default="")
+    model_signing_required: bool = Field(default=False)
+
     # Cookie-based refresh flow (Phase 2.1 §10).
     refresh_cookie_name: str = Field(default="gs_refresh")
     refresh_cookie_path: str = Field(default="/api/v1/auth")
@@ -71,7 +77,7 @@ class Settings(BaseSettings):
     csrf_header_name: str = Field(default="X-CSRF-Token")
 
     @property
-    def cors_origins(self) -> List[str]:
+    def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
 
     @property
@@ -96,6 +102,10 @@ class Settings(BaseSettings):
         for origin in self.cors_origins:
             if origin.startswith("http://") and "localhost" not in origin:
                 errs.append(f"allowed_origins entry {origin!r} must use HTTPS in production")
+        if not self.model_signing_pubkey.strip():
+            errs.append(
+                "model_signing_pubkey must be set in production (Ed25519 pubkey hex)"
+            )
         if errs:
             raise ValueError(
                 "Refusing to boot with unsafe production configuration:\n  - "

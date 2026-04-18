@@ -12,6 +12,7 @@ def _prod_kwargs(**overrides):
         influxdb_token="realtoken-abc123",
         mqtt_gateway_api_key="gateway-abc123",
         allowed_origins="https://geosentinel.example.com",
+        model_signing_pubkey="00" * 32,
     )
     base.update(overrides)
     return base
@@ -50,6 +51,11 @@ def test_production_rejects_http_origin():
 def test_production_allows_localhost_http_for_smoke_tests():
     s = Settings(**_prod_kwargs(allowed_origins="https://prod.example.com,http://localhost:5173"))
     assert "http://localhost:5173" in s.cors_origins
+
+
+def test_production_rejects_missing_model_signing_pubkey():
+    with pytest.raises(ValueError, match="model_signing_pubkey"):
+        Settings(**_prod_kwargs(model_signing_pubkey=""))
 
 
 def test_development_stays_permissive():

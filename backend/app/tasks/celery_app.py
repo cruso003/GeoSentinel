@@ -23,6 +23,7 @@ celery_app = Celery(
         "app.tasks.report_generation",
         "app.tasks.insar_processing",
         "app.tasks.escalation",
+        "app.tasks.drift",
     ],
 )
 
@@ -46,6 +47,7 @@ celery_app.conf.update(
         # Everything else on the default queue.
         "app.tasks.report_generation.*": {"queue": "default"},
         "app.tasks.escalation.*": {"queue": "default"},
+        "app.tasks.drift.*": {"queue": "default"},
     },
     beat_schedule={
         "enviroguard-15min": {
@@ -67,6 +69,11 @@ celery_app.conf.update(
             "task": "app.tasks.escalation.sweep_unacknowledged",
             "schedule": 60,
             "options": {"queue": "default", "expires": 50},
+        },
+        "model-drift-daily": {
+            "task": "app.tasks.drift.sweep_model_drift",
+            "schedule": crontab(hour=2, minute=30),
+            "options": {"queue": "default", "expires": 60 * 60},
         },
     },
 )
