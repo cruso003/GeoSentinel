@@ -31,6 +31,8 @@ async def _run(site_id: str | None) -> dict:
         log.warning("InSAR pipeline module unavailable: %s", e)
         return {"status": "module-missing"}
 
+    from ..services.insar_ingest import ingest_for_site
+
     async with SessionLocal() as db:
         stmt = select(Site)
         if site_id:
@@ -40,14 +42,35 @@ async def _run(site_id: str | None) -> dict:
     results: list[dict] = []
     for s in sites:
         out = INSAR_ROOT / s.id
+        entry: dict = {"site_id": s.id}
         try:
             result = await run_pipeline(
                 site_id=s.id, lat=s.centroid_lat, lng=s.centroid_lng, out_dir=out,
             )
-            results.append({"site_id": s.id, "status": result.get("status", "unknown")})
+            entry["status"] = result.get("status", "unknown")
         except Exception as e:
             log.exception("InSAR pipeline failed for %s: %s", s.id, e)
-            results.append({"site_id": s.id, "status": "error", "error": str(e)})
+            entry["status"] = "error"
+            entry["error"] = str(e)
+            results.append(entry)
+            continue
+
+        # Parse the manifest into per-slope Influx points so the PINN and
+        # the dashboard can consume a real displacement series on the
+        # next SlopeWatch beat. Failures here are non-fatal — the beat
+        # succeeded from the producer's perspective.
+        try:
+            async with SessionLocal() as ingest_db:
+                ingest = await ingest_for_site(ingest_db, site_id=s.id, root=INSAR_ROOT)
+            entry["ingest"] = {
+                "status": ingest.status,
+                "slopes_written": ingest.slopes_written,
+                "points_written": ingest.points_written,
+            }
+        except Exception as e:
+            log.exception("InSAR ingest failed for %s: %s", s.id, e)
+            entry["ingest"] = {"status": "error", "error": str(e)}
+        results.append(entry)
     return {"results": results, "count": len(results)}
 
 

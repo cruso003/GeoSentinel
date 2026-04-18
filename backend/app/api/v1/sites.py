@@ -1,6 +1,7 @@
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -10,6 +11,8 @@ from ...core.deps import require_roles, require_site_role
 from ...models.site import MineSlope, SensorNode, Site
 from ...models.user import User
 from ...schemas.entities import MineSlopeOut, SensorNodeOut, SiteOut, SiteSummary
+from ...schemas.insar import InsarPoint, InsarSeries
+from ...services.influx import influx
 from ...services.rbac import allowed_site_ids
 
 router = APIRouter(prefix="/sites", tags=["sites"])
@@ -123,3 +126,58 @@ async def list_slopes(
         )
         for s in rows
     ]
+
+
+@router.get("/{site_id}/slopes/{slope_id}/insar", response_model=InsarSeries)
+async def get_slope_insar(
+    site_id: str,
+    slope_id: str,
+    _=Depends(site_scoped_operator),
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+    days: Annotated[int, Query(ge=7, le=365, description="Lookback window in days")] = 90,
+):
+    """Cumulative displacement series + fitted velocity for one slope.
+
+    Phase-3 InSAR ingestion writes to the in-memory ring buffer keyed by
+    ``(\"insar\", slope_id)``; this route slices the last ``days`` and
+    returns them alongside the latest fitted velocity (mm/yr), which the
+    frontend renders as a badge.
+    """
+
+    slope = (
+        await db.execute(
+            select(MineSlope).where(MineSlope.id == slope_id, MineSlope.site_id == site_id)
+        )
+    ).scalar_one_or_none()
+    if not slope:
+        raise HTTPException(status_code=404, detail="Slope not found")
+
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(days=days)
+    rows = await influx.history("insar", slope_id, start, end)
+
+    points: list[InsarPoint] = []
+    latest_velocity: float | None = None
+    for r in rows:
+        ts = r.get("timestamp")
+        if isinstance(ts, str):
+            ts_dt = datetime.fromisoformat(ts)
+        elif isinstance(ts, datetime):
+            ts_dt = ts
+        else:
+            continue
+        disp = r.get("displacement_mm")
+        if disp is None:
+            continue
+        points.append(InsarPoint(timestamp=ts_dt, displacement_mm=float(disp)))
+        v = r.get("velocity_mm_yr")
+        if v is not None:
+            latest_velocity = float(v)
+
+    return InsarSeries(
+        site_id=site_id,
+        slope_id=slope_id,
+        points=points,
+        velocity_mm_yr=latest_velocity,
+        window_days=days,
+    )

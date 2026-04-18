@@ -89,6 +89,35 @@ class InfluxService:
         write_api = self._client.write_api()
         await write_api.write(bucket=s.influxdb_bucket, record=p)
 
+    async def write_insar(self, reading: dict) -> None:
+        """Persist one InSAR sample for a slope.
+
+        Shape: ``{slope_id, site_id, timestamp, displacement_mm,
+        velocity_mm_yr, coherence?}``. Both the cumulative displacement
+        and the fitted velocity are stored so downstream consumers (the
+        API chart + the PINN ``insar_factor`` coupling) don't have to
+        re-derive velocity from a short history window.
+        """
+
+        reading = dict(reading)
+        reading["node_id"] = reading["slope_id"]  # align with the (measurement, node_id) mem key
+        self._write_mem("insar", reading)
+        if not self._connected or Point is None:
+            return
+        s = get_settings()
+        p = (
+            Point("insar")
+            .tag("slope_id", reading["slope_id"])
+            .tag("site_id", reading["site_id"])
+            .time(reading["timestamp"])
+        )
+        for k in ("displacement_mm", "velocity_mm_yr", "coherence"):
+            v = reading.get(k)
+            if v is not None:
+                p = p.field(k, float(v))
+        write_api = self._client.write_api()
+        await write_api.write(bucket=s.influxdb_bucket, record=p)
+
     def _write_mem(self, measurement: str, reading: dict) -> None:
         key = (measurement, reading["node_id"])
         r = dict(reading)

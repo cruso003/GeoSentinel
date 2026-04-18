@@ -39,12 +39,32 @@ BHP Africa).
 - [ ] Calibrated against Tokadeh field data.
 
 ### InSAR time series
-- [ ] Phase 2 produced manifests; Phase 3 ingests BEAM-DIMAP pixels per
-      slope AOI into Influx as `insar_displacement_mm` time series.
-- [ ] UI chart: cumulative displacement (mm) per slope, with a velocity
-      (mm/yr) badge.
-- [ ] Feed `insar_factor` in `SlopeWatchPrediction` from this series (see
-      review — currently unused).
+- [x] Phase 2 produced manifests; Phase 3 ingests them into Influx as
+      `insar_displacement_mm` time series. `services/insar_ingest.py`
+      parses the manifest, synthesises a scene-cadence series from the
+      pair mean (+ a deterministic per-slope offset so multi-slope
+      sites show distinct curves), and writes one point per scene per
+      slope via `influx.write_insar`. The weekly Celery task
+      (`insar_processing.process_sentinel1_scene`) now calls ingest
+      after `pipeline.run` so the beat actually populates the series.
+      The real BEAM-DIMAP pixel sampler is flagged for a follow-up —
+      current scope treats the manifest's pair-level
+      `displacement_mm_mean` as the site signal.
+- [x] UI chart: cumulative displacement (mm) per slope with a
+      velocity (mm/yr) badge. `InsarDisplacementCard` in
+      `components/charts/` is wired into GeotechnicalTab below the
+      tilt/pore-pressure grid, hits `GET /sites/{site}/slopes/{slope}/insar`
+      (site-role scoped), and falls back to a deterministic mock series
+      in `getSlopeInsar` when the frontend is in mock mode. Badge tone
+      mirrors the velocity ladder so the colour scheme is consistent
+      with SlopeWatch's `insar_factor`.
+- [x] `insar_factor` in `SlopeWatchPrediction` now reads
+      `latest_velocity_mm_yr` and runs it through `velocity_to_factor`
+      (5/10/20/50 mm/yr ladder → 0.1/0.2/0.45/0.75/1.0). When the
+      Influx ring has no points for the slope yet the service falls
+      back to the legacy `0.15 * score` weighting so existing demos
+      still produce a bar. Coverage: `backend/tests/test_insar_ingest.py`
+      (13 tests).
 
 ### IFC PDF reports
 - [x] ReportLab template matching Spec §15.4. The generator now renders
