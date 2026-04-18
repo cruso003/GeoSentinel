@@ -21,9 +21,19 @@ tracked, evaluated, drift-monitored production models.
       publications).
 
 ### Experiment tracking
-- [ ] MLflow server in `docker-compose.staging.yml`.
-- [ ] `train.py` logs params, metrics, artifacts, and the data checksum.
-- [ ] Tagged model promotion (`Staging` → `Production`).
+- [x] MLflow server in `docker-compose.staging.yml` (Postgres backend,
+      MinIO S3 artifact store, bootstrap container that creates the
+      `mlflow` bucket). `docs/ops/mlflow-staging.md` walks through the
+      whole setup.
+- [x] `train.py` (both EnviroGuard + SlopeWatch) logs params,
+      per-epoch metrics via a keras callback, `best_val_auc/loss`, and
+      uploads `.tflite` + `scaler.json` + `metadata.json` as artifacts.
+      A `data_sha256` param pins every run to its exact training inputs.
+- [x] `ai/_mlflow.py` no-op shim: when `MLFLOW_TRACKING_URI` is unset
+      (laptop / CI), training still runs and writes a local `run.json`
+      manifest next to the artifacts.
+- [ ] Tagged model promotion (`Staging` → `Production`) — needs the
+      retraining loop below to be in place first.
 
 ### Evaluation harness
 - [x] `backend/app/services/evaluation.py` — stdlib ROC-AUC

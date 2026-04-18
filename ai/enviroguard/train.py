@@ -7,18 +7,27 @@ Pipeline:
   4. Train LSTM+Attention with binary-crossentropy over 7 outputs.
   5. Early-stopping + ReduceLROnPlateau on val AUC.
   6. Export: full Keras model + scaler + a TFLite artifact for on-node inference.
+  7. Log params/metrics/artifacts + data checksum to MLflow when
+     ``MLFLOW_TRACKING_URI`` is set (Phase 2.4). Local runs without MLflow
+     still produce artifacts + a ``run.json`` manifest.
 
 Run:
     python -m ai.enviroguard.train --data data/enviroguard.parquet --epochs 40
+
+With tracking:
+    MLFLOW_TRACKING_URI=http://localhost:5000 python -m ai.enviroguard.train ...
 """
 
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 from pathlib import Path
 
 import numpy as np
+
+from ai._mlflow import data_checksum, start_run, write_run_manifest
 
 from .model import FEATURES, OUTPUT_HEADS, SEQUENCE_LENGTH, build_model
 
@@ -54,88 +63,149 @@ def main() -> None:  # pragma: no cover - training entrypoint
     parser.add_argument(
         "--out", default=str(Path(__file__).parent / "artifacts"),
     )
+    parser.add_argument(
+        "--run-name",
+        default=None,
+        help="MLflow run name; defaults to an ISO timestamp.",
+    )
     args = parser.parse_args()
 
     import pandas as pd
-    from sklearn.preprocessing import StandardScaler
     import tensorflow as tf
+    from sklearn.preprocessing import StandardScaler
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
+    data_path = Path(args.data)
+    run_name = args.run_name or f"enviroguard-{dt.datetime.utcnow():%Y%m%dT%H%M%SZ}"
 
-    df = pd.read_parquet(args.data)
-    targets = [f"target_{h}" for h in (
-        "ph_24h", "turbidity_24h", "dissolved_oxygen_24h",
-        "conductivity_24h", "pm25_24h", "ph_72h", "turbidity_72h",
-    )]
-    for t in targets:
-        if t not in df.columns:
-            raise SystemExit(f"Training frame missing target: {t}")
+    with start_run(
+        experiment="enviroguard",
+        run_name=run_name,
+        tags={"model": "enviroguard", "pipeline": "lstm_attention_v1"},
+    ) as run:
+        run.log_params(
+            {
+                "epochs": args.epochs,
+                "batch_size": args.batch_size,
+                "val_split": args.val_split,
+                "sequence_length": SEQUENCE_LENGTH,
+                "num_features": len(FEATURES),
+                "num_outputs": len(OUTPUT_HEADS),
+                "data_path": str(data_path),
+                "data_sha256": data_checksum(data_path),
+            }
+        )
 
-    # Hold out the last fraction of time per node for validation.
-    df = df.sort_values(["node_id", "timestamp"])
-    train_parts, val_parts = [], []
-    for _, g in df.groupby("node_id"):
-        cut = int(len(g) * (1 - args.val_split))
-        train_parts.append(g.iloc[:cut])
-        val_parts.append(g.iloc[cut:])
-    train_df = pd.concat(train_parts)
-    val_df = pd.concat(val_parts)
+        df = pd.read_parquet(data_path)
+        targets = [f"target_{h}" for h in (
+            "ph_24h", "turbidity_24h", "dissolved_oxygen_24h",
+            "conductivity_24h", "pm25_24h", "ph_72h", "turbidity_72h",
+        )]
+        for t in targets:
+            if t not in df.columns:
+                raise SystemExit(f"Training frame missing target: {t}")
 
-    scaler = StandardScaler().fit(train_df[FEATURES].to_numpy())
-    train_df = train_df.assign(**{
-        f: (train_df[f] - scaler.mean_[i]) / scaler.scale_[i]
-        for i, f in enumerate(FEATURES)
-    })
-    val_df = val_df.assign(**{
-        f: (val_df[f] - scaler.mean_[i]) / scaler.scale_[i]
-        for i, f in enumerate(FEATURES)
-    })
+        df = df.sort_values(["node_id", "timestamp"])
+        train_parts, val_parts = [], []
+        for _, g in df.groupby("node_id"):
+            cut = int(len(g) * (1 - args.val_split))
+            train_parts.append(g.iloc[:cut])
+            val_parts.append(g.iloc[cut:])
+        train_df = pd.concat(train_parts)
+        val_df = pd.concat(val_parts)
 
-    X_train, y_train = _build_sequences(train_df, FEATURES, targets, SEQUENCE_LENGTH)
-    X_val, y_val = _build_sequences(val_df, FEATURES, targets, SEQUENCE_LENGTH)
-    print(f"train: {X_train.shape}  val: {X_val.shape}")
+        scaler = StandardScaler().fit(train_df[FEATURES].to_numpy())
+        train_df = train_df.assign(**{
+            f: (train_df[f] - scaler.mean_[i]) / scaler.scale_[i]
+            for i, f in enumerate(FEATURES)
+        })
+        val_df = val_df.assign(**{
+            f: (val_df[f] - scaler.mean_[i]) / scaler.scale_[i]
+            for i, f in enumerate(FEATURES)
+        })
 
-    model = build_model()
-    model.compile(
-        optimizer=tf.keras.optimizers.Adam(1e-3),
-        loss="binary_crossentropy",
-        metrics=[tf.keras.metrics.AUC(name="auc"), "binary_accuracy"],
-    )
+        X_train, y_train = _build_sequences(train_df, FEATURES, targets, SEQUENCE_LENGTH)
+        X_val, y_val = _build_sequences(val_df, FEATURES, targets, SEQUENCE_LENGTH)
+        print(f"train: {X_train.shape}  val: {X_val.shape}")
+        run.log_params(
+            {
+                "train_windows": int(X_train.shape[0]),
+                "val_windows": int(X_val.shape[0]),
+            }
+        )
 
-    callbacks = [
-        tf.keras.callbacks.EarlyStopping(monitor="val_auc", mode="max", patience=6, restore_best_weights=True),
-        tf.keras.callbacks.ReduceLROnPlateau(monitor="val_auc", mode="max", factor=0.5, patience=3),
-    ]
-    model.fit(
-        X_train, y_train,
-        validation_data=(X_val, y_val),
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        callbacks=callbacks,
-    )
+        model = build_model()
+        model.compile(
+            optimizer=tf.keras.optimizers.Adam(1e-3),
+            loss="binary_crossentropy",
+            metrics=[tf.keras.metrics.AUC(name="auc"), "binary_accuracy"],
+        )
 
-    model.save(out_dir / "enviroguard.keras")
-    # Phase 2.1 §5: ship scalers as JSON. pickle.load is an RCE surface if the
-    # model dir is ever writable by an untrusted user.
-    (out_dir / "scaler.json").write_text(json.dumps({
-        "mean": scaler.mean_.tolist(),
-        "scale": scaler.scale_.tolist(),
-        "features": FEATURES,
-    }, indent=2))
-    (out_dir / "metadata.json").write_text(json.dumps({
-        "features": FEATURES,
-        "output_heads": OUTPUT_HEADS,
-        "sequence_length": SEQUENCE_LENGTH,
-        "scaler_mean": scaler.mean_.tolist(),
-        "scaler_scale": scaler.scale_.tolist(),
-    }, indent=2))
+        # Stream per-epoch metrics to MLflow so partial runs are still
+        # useful if training is interrupted.
+        class _MLflowCallback(tf.keras.callbacks.Callback):
+            def on_epoch_end(self, epoch, logs=None):
+                if not logs:
+                    return
+                run.log_metrics({k: float(v) for k, v in logs.items()}, step=epoch)
 
-    converter = tf.lite.TFLiteConverter.from_keras_model(model)
-    converter.optimizations = [tf.lite.Optimize.DEFAULT]
-    tflite_bytes = converter.convert()
-    (out_dir / "enviroguard.tflite").write_bytes(tflite_bytes)
-    print(f"artifacts written to {out_dir}")
+        callbacks = [
+            tf.keras.callbacks.EarlyStopping(monitor="val_auc", mode="max", patience=6, restore_best_weights=True),
+            tf.keras.callbacks.ReduceLROnPlateau(monitor="val_auc", mode="max", factor=0.5, patience=3),
+            _MLflowCallback(),
+        ]
+        history = model.fit(
+            X_train, y_train,
+            validation_data=(X_val, y_val),
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            callbacks=callbacks,
+        )
+
+        # Final metrics: pick the best epoch on val_auc for promotion gates.
+        val_auc = max(history.history.get("val_auc", [0.0]))
+        val_loss = min(history.history.get("val_loss", [float("inf")]))
+        run.log_metrics({"best_val_auc": float(val_auc), "best_val_loss": float(val_loss)})
+
+        model.save(out_dir / "enviroguard.keras")
+        # Phase 2.1 §5: ship scalers as JSON. pickle.load is an RCE surface if the
+        # model dir is ever writable by an untrusted user.
+        (out_dir / "scaler.json").write_text(json.dumps({
+            "mean": scaler.mean_.tolist(),
+            "scale": scaler.scale_.tolist(),
+            "features": FEATURES,
+        }, indent=2))
+        (out_dir / "metadata.json").write_text(json.dumps({
+            "features": FEATURES,
+            "output_heads": OUTPUT_HEADS,
+            "sequence_length": SEQUENCE_LENGTH,
+            "scaler_mean": scaler.mean_.tolist(),
+            "scaler_scale": scaler.scale_.tolist(),
+        }, indent=2))
+
+        converter = tf.lite.TFLiteConverter.from_keras_model(model)
+        converter.optimizations = [tf.lite.Optimize.DEFAULT]
+        tflite_bytes = converter.convert()
+        (out_dir / "enviroguard.tflite").write_bytes(tflite_bytes)
+
+        for art in ("enviroguard.tflite", "scaler.json", "metadata.json"):
+            run.log_artifact(out_dir / art)
+        # Run manifest lands next to the artifacts so operators without
+        # MLflow access can still trace a deployed model to its config.
+        write_run_manifest(
+            out_dir,
+            {
+                "model": "enviroguard",
+                "run_name": run_name,
+                "data_path": str(data_path),
+                "data_sha256": data_checksum(data_path),
+                "best_val_auc": float(val_auc),
+                "best_val_loss": float(val_loss),
+                "created_at": dt.datetime.utcnow().isoformat() + "Z",
+            },
+        )
+        print(f"artifacts written to {out_dir}")
 
 
 if __name__ == "__main__":
