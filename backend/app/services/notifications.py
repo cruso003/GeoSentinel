@@ -1,46 +1,116 @@
 """CRITICAL / EVACUATION alert dispatch (Spec §8.5).
 
-- Email via SMTP (aiosmtplib when installed, stdlib fallback)
-- SMS via Twilio REST API (httpx)
-- Logs when no provider is configured so dev still exercises the code path.
+- Email via SMTP (aiosmtplib when installed, stdlib fallback).
+- SMS via Twilio REST API (httpx).
+- Phase 2.3: recipients resolved from ``notification_subscriptions`` — each
+  row ties a user to a (site, channel, min_severity). Users with the matching
+  channel + a ``min_severity`` no stronger than the incoming severity are
+  notified. Missing provider credentials degrade to structured logs so dev
+  still exercises the code path.
 """
 
 from __future__ import annotations
 
 import logging
 from email.message import EmailMessage
-from typing import Iterable, Optional
 
 import httpx
+from sqlalchemy import select
 
 from ..core.config import get_settings
+from ..core.db import SessionLocal
+from ..models.notifications import NotificationSubscription
+from ..models.user import User
 
 log = logging.getLogger(__name__)
 
 
+# Severity is a four-tier ladder; "covered by min_severity ≤ incoming" means
+# comparing their positions. INFO is the weakest, EVACUATION the strongest.
+SEVERITY_RANK = {"INFO": 0, "WARNING": 1, "CRITICAL": 2, "EVACUATION": 3}
+
+
+def _rank(sev: str) -> int:
+    return SEVERITY_RANK.get(sev, 0)
+
+
 class NotificationService:
+    async def direct(
+        self,
+        *,
+        subject: str,
+        body: str,
+        email: str | None = None,
+        phone: str | None = None,
+    ) -> None:
+        """Send to a specific recipient without consulting subscriptions.
+
+        Used for escalation hops and the operator test-alert button where the
+        target is chosen explicitly. Missing provider creds degrade to logs.
+        """
+        settings = get_settings()
+        await self._send_email(
+            settings=settings,
+            subject=subject,
+            body=body,
+            to=[email] if email else [],
+        )
+        await self._send_sms(
+            settings=settings,
+            body=f"{subject}: {body}"[:320],
+            to=[phone] if phone else [],
+        )
+
     async def dispatch(self, *, site_id: str, severity: str, message: str) -> None:
         settings = get_settings()
         subject = f"[GeoSentinel {severity}] {site_id}"
-        recipients = self._recipients_for_site(site_id)
+        recipients = await self._recipients_for_site(site_id=site_id, severity=severity)
+
+        emails = sorted({e for e, _ in recipients if e})
+        phones = sorted({p for _, p in recipients if p})
 
         await self._send_email(
             settings=settings,
             subject=subject,
             body=message,
-            to=[e for e, _ in recipients if e],
+            to=emails,
         )
         await self._send_sms(
             settings=settings,
             body=f"{subject}: {message}"[:320],
-            to=[p for _, p in recipients if p],
+            to=phones,
         )
 
-    def _recipients_for_site(self, site_id: str) -> Iterable[tuple[Optional[str], Optional[str]]]:
-        # Phase 2 replacement: query users/subscriptions table per site.
-        # For now, return an empty iterable; CRITICAL alerts are logged and
-        # still broadcast over WebSocket to the control room.
-        return []
+    async def _recipients_for_site(
+        self, *, site_id: str, severity: str
+    ) -> list[tuple[str | None, str | None]]:
+        """Return ``(email, phone)`` pairs for each active subscription whose
+        ``min_severity`` rank is ≤ the incoming severity. A user who opts into
+        email receives an ``(email, None)`` row; an opt-in for SMS returns
+        ``(None, phone)``. The caller dedupes across channels."""
+
+        incoming = _rank(severity)
+        rows: list[tuple[str | None, str | None]] = []
+        async with SessionLocal() as db:
+            stmt = (
+                select(NotificationSubscription, User)
+                .join(User, User.id == NotificationSubscription.user_id)
+                .where(
+                    NotificationSubscription.site_id == site_id,
+                    NotificationSubscription.active.is_(True),
+                )
+            )
+            result = (await db.execute(stmt)).all()
+
+        for sub, user in result:
+            if _rank(sub.min_severity) > incoming:
+                continue
+            if sub.channel == "email":
+                rows.append((user.email, None))
+            elif sub.channel == "sms" and user.phone_number:
+                rows.append((None, user.phone_number))
+            # push is a future channel — no-op for now, logged by dispatch.
+        return rows
 
     async def _send_email(self, settings, *, subject: str, body: str, to: list[str]) -> None:
         if not settings.smtp_host or not to:
@@ -92,3 +162,19 @@ class NotificationService:
 
 
 notifications = NotificationService()
+
+
+def validate_e164(phone: str | None) -> str | None:
+    """Return the phone if it's a valid E.164 string (``+`` + 8-15 digits),
+    else ``None``. Used by the profile API and seed loader."""
+    if not phone:
+        return None
+    phone = phone.strip()
+    if not phone.startswith("+"):
+        return None
+    digits = phone[1:]
+    if not digits.isdigit():
+        return None
+    if not (8 <= len(digits) <= 15):
+        return None
+    return phone

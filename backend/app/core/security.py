@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from uuid import uuid4
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -11,11 +12,26 @@ from .config import get_settings
 _pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
+class PasswordTooLongError(ValueError):
+    """Raised when a password exceeds bcrypt's 72-byte hard limit."""
+
+
+def _guard_length(plain: str) -> None:
+    limit = get_settings().max_password_bytes
+    if len(plain.encode("utf-8")) > limit:
+        raise PasswordTooLongError(
+            f"Password must be at most {limit} bytes (bcrypt truncates beyond this)."
+        )
+
+
 def hash_password(plain: str) -> str:
+    _guard_length(plain)
     return _pwd_ctx.hash(plain)
 
 
 def verify_password(plain: str, hashed: str) -> bool:
+    if len(plain.encode("utf-8")) > get_settings().max_password_bytes:
+        return False
     return _pwd_ctx.verify(plain, hashed)
 
 
@@ -29,15 +45,16 @@ def _encode(data: dict, expires_delta: timedelta) -> str:
 def create_access_token(sub: str, role: str) -> str:
     settings = get_settings()
     return _encode(
-        {"sub": sub, "role": role, "type": "access"},
+        {"sub": sub, "role": role, "type": "access", "jti": uuid4().hex},
         timedelta(minutes=settings.access_token_expire_minutes),
     )
 
 
 def create_refresh_token(sub: str) -> str:
+    """Each refresh gets a fresh jti so revocation blocklists a single token."""
     settings = get_settings()
     return _encode(
-        {"sub": sub, "type": "refresh"},
+        {"sub": sub, "type": "refresh", "jti": uuid4().hex},
         timedelta(days=settings.refresh_token_expire_days),
     )
 

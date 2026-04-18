@@ -112,7 +112,9 @@ export function Sidebar() {
           </div>
           <button
             type="button"
-            onClick={logout}
+            onClick={() => {
+              void logout();
+            }}
             title="Sign out"
             className="rounded-md p-1.5 text-slate-400 hover:bg-bg-line hover:text-white"
           >

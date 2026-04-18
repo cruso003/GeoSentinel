@@ -14,16 +14,16 @@ Creates:
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from uuid import uuid4
 
 from sqlalchemy import select
 
-from .db import SessionLocal, engine, Base
-from .security import hash_password
+from ..models.notifications import EscalationStep, NotificationSubscription, UserSite
 from ..models.site import MineSlope, SensorNode, Site
 from ..models.user import User
-
+from .db import Base, SessionLocal, engine
+from .security import hash_password
 
 TOKADEH_ID = "tokadeh-liberia"
 
@@ -126,7 +126,7 @@ async def seed_all() -> None:
                     elevation_m=n["elevation_m"],
                     battery_pct=92,
                     signal_rssi=-68,
-                    last_seen=datetime.now(timezone.utc),
+                    last_seen=datetime.now(UTC),
                     status="ONLINE",
                     calibration_due=cal_due,
                 ))
@@ -140,10 +140,10 @@ async def seed_all() -> None:
                 ))
 
         # Users
-        for email, name, role in [
-            ("admin@geosentinel.dev", "Henrique Crusoe", "esg_admin"),
-            ("operator@geosentinel.dev", "Control Room Operator", "operator"),
-            ("community@geosentinel.dev", "Nimba Community Portal", "community"),
+        for email, name, role, phone in [
+            ("admin@geosentinel.dev", "Henrique Crusoe", "esg_admin", "+231770000001"),
+            ("operator@geosentinel.dev", "Control Room Operator", "operator", "+231770000002"),
+            ("community@geosentinel.dev", "Nimba Community Portal", "community", None),
         ]:
             exists = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
             if exists is None:
@@ -153,10 +153,69 @@ async def seed_all() -> None:
                     name=name,
                     hashed_password=hash_password("geosentinel"),
                     role=role,
+                    phone_number=phone,
+                ))
+
+        await db.flush()
+
+        # Phase 2.3 seeds: per-site membership + default subscriptions + a
+        # two-hop escalation ladder. Idempotent — each seed checks for an
+        # existing row by (user_id, site_id, ...) before inserting.
+        admin = (await db.execute(
+            select(User).where(User.email == "admin@geosentinel.dev")
+        )).scalar_one()
+        operator = (await db.execute(
+            select(User).where(User.email == "operator@geosentinel.dev")
+        )).scalar_one()
+
+        for u, role in ((admin, "esg_admin"), (operator, "operator")):
+            exists = (await db.execute(
+                select(UserSite).where(
+                    UserSite.user_id == u.id, UserSite.site_id == TOKADEH_ID
+                )
+            )).scalar_one_or_none()
+            if exists is None:
+                db.add(UserSite(user_id=u.id, site_id=TOKADEH_ID, role=role))
+
+        for u, channel in (
+            (admin, "email"),
+            (admin, "sms"),
+            (operator, "email"),
+            (operator, "sms"),
+        ):
+            exists = (await db.execute(
+                select(NotificationSubscription).where(
+                    NotificationSubscription.user_id == u.id,
+                    NotificationSubscription.site_id == TOKADEH_ID,
+                    NotificationSubscription.channel == channel,
+                )
+            )).scalar_one_or_none()
+            if exists is None:
+                db.add(NotificationSubscription(
+                    user_id=u.id,
+                    site_id=TOKADEH_ID,
+                    channel=channel,
+                    min_severity="CRITICAL",
+                    active=True,
+                ))
+
+        for position, u in ((1, operator), (2, admin)):
+            exists = (await db.execute(
+                select(EscalationStep).where(
+                    EscalationStep.site_id == TOKADEH_ID,
+                    EscalationStep.position == position,
+                )
+            )).scalar_one_or_none()
+            if exists is None:
+                db.add(EscalationStep(
+                    site_id=TOKADEH_ID, position=position, user_id=u.id
                 ))
 
         await db.commit()
-    print(f"Seed complete. Site={TOKADEH_ID}, 5 nodes, 2 slopes, 3 users.")
+    print(
+        f"Seed complete. Site={TOKADEH_ID}, 5 nodes, 2 slopes, 3 users, "
+        "4 subscriptions, 2-hop escalation ladder."
+    )
 
 
 if __name__ == "__main__":

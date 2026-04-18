@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..models.alert import Alert
 from ..schemas.ai import EnviroGuardPredictionOut, SlopeWatchPredictionOut
 from ..schemas.sensors import EnvSensorReading, GeoSensorReading
+from . import metrics
 from .notifications import notifications
 from .thresholds import IFC_THRESHOLDS, check
 from .ws_hub import hub
@@ -99,6 +100,7 @@ async def _emit(
             },
         },
     )
+    metrics.alerts_emitted_total.inc(severity=severity, type=alert_type)
     if severity in ("CRITICAL", "EVACUATION"):
         await notifications.dispatch(site_id=site_id, severity=severity, message=message)
     return alert

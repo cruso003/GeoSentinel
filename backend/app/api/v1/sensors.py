@@ -16,6 +16,7 @@ from ...schemas.sensors import (
     Resolution,
     SensorIngestPayload,
 )
+from ...services import gateway_auth, metrics
 from ...services.alert_engine import evaluate_env, evaluate_geo
 from ...services.influx import influx
 from ...services.ws_hub import ws_hub
@@ -86,24 +87,54 @@ async def ingest(
     x_gateway_api_key: Annotated[Optional[str], Header()] = None,
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ):
-    settings = get_settings()
-    if not x_gateway_api_key or x_gateway_api_key != settings.mqtt_gateway_api_key:
-        raise HTTPException(status_code=401, detail="Invalid gateway key")
+    if not x_gateway_api_key:
+        raise HTTPException(status_code=401, detail="Missing gateway key")
+
+    gw = await gateway_auth.authenticate(db, x_gateway_api_key)
+    allowed: Optional[set[str]] = None
+
+    if gw is None:
+        # Legacy transition: accept the shared settings key in non-prod only,
+        # and when no gateways are provisioned yet. Production refuses this
+        # path via the config validator (non-default key required).
+        settings = get_settings()
+        if x_gateway_api_key != settings.mqtt_gateway_api_key:
+            raise HTTPException(status_code=401, detail="Invalid gateway key")
+    else:
+        allowed = gateway_auth.allowed_nodes(gw)
+
+    def _check_scope(node_id: str) -> None:
+        if allowed is not None and node_id not in allowed:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Gateway not authorised for node {node_id}",
+            )
 
     alerts = 0
     for r in payload.env:
+        _check_scope(r.node_id)
         d = r.model_dump(mode="json")
         await influx.write_env(r.model_dump())
         await ws_hub.broadcast(r.site_id, {"type": "SENSOR_UPDATE", "kind": "env", "payload": d})
         alerts += len(await evaluate_env(db, r))
 
     for r in payload.geo:
+        _check_scope(r.node_id)
         d = r.model_dump(mode="json")
         await influx.write_geo(r.model_dump())
         await ws_hub.broadcast(r.site_id, {"type": "SENSOR_UPDATE", "kind": "geo", "payload": d})
         alerts += len(await evaluate_geo(db, r))
 
-    if alerts:
+    if alerts or gw is not None:
         await db.commit()
 
-    return {"accepted": {"env": len(payload.env), "geo": len(payload.geo)}, "alerts": alerts}
+    if payload.env:
+        metrics.ingest_rows_total.inc(len(payload.env), kind="env")
+    if payload.geo:
+        metrics.ingest_rows_total.inc(len(payload.geo), kind="geo")
+
+    return {
+        "accepted": {"env": len(payload.env), "geo": len(payload.geo)},
+        "alerts": alerts,
+        "gateway": gw.name if gw else None,
+    }

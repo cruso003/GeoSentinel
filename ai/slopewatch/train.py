@@ -8,6 +8,11 @@ slip surfaces for the slope in question. Pore pressure (feature index 3) is
 injected into the Mohr-Coulomb sliders during loss computation, so the
 network is penalised when it drifts from limit-equilibrium predictions.
 
+Logs params/metrics/artifacts to MLflow when ``MLFLOW_TRACKING_URI`` is set
+(Phase 2.4). If the training frame is the synthetic fallback we log a
+``data_sha256=synthetic`` tag so experiment tracking doesn't silently mix
+real and synthetic runs.
+
 Run:
     python -m ai.slopewatch.train --data data/slopewatch.parquet --epochs 60
 """
@@ -15,10 +20,13 @@ Run:
 from __future__ import annotations
 
 import argparse
-import pickle
+import datetime as dt
+import json
 from pathlib import Path
 
 import numpy as np
+
+from ai._mlflow import data_checksum, start_run, write_run_manifest
 
 from .model import FEATURES, SEQUENCE_LENGTH, ModelSpec, build_model
 from .physics import Slice, Soil, factor_of_safety, risk_from_fos
@@ -97,6 +105,7 @@ def main() -> None:  # pragma: no cover
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--val-split", type=float, default=0.2)
     parser.add_argument("--out", default=str(Path(__file__).parent / "artifacts"))
+    parser.add_argument("--run-name", default=None)
     args = parser.parse_args()
 
     import pandas as pd
@@ -105,61 +114,126 @@ def main() -> None:  # pragma: no cover
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
+    run_name = args.run_name or f"slopewatch-{dt.datetime.utcnow():%Y%m%dT%H%M%SZ}"
+    synthetic = args.data is None
 
-    df = pd.read_parquet(args.data) if args.data else _synthetic_slope_frame()
+    with start_run(
+        experiment="slopewatch",
+        run_name=run_name,
+        tags={
+            "model": "slopewatch",
+            "pipeline": "pinn_v1",
+            "data_origin": "synthetic" if synthetic else "real",
+        },
+    ) as run:
+        run.log_params(
+            {
+                "epochs": args.epochs,
+                "batch_size": args.batch_size,
+                "val_split": args.val_split,
+                "sequence_length": SEQUENCE_LENGTH,
+                "num_features": len(FEATURES),
+                "physics_lambda": ModelSpec().physics_lambda,
+                "data_path": str(args.data) if args.data else "synthetic",
+                "data_sha256": (
+                    data_checksum(Path(args.data)) if args.data else "synthetic"
+                ),
+            }
+        )
 
-    df = df.sort_values(["slope_id", "timestamp"])
-    train_parts, val_parts = [], []
-    for _, g in df.groupby("slope_id"):
-        cut = int(len(g) * (1 - args.val_split))
-        train_parts.append(g.iloc[:cut])
-        val_parts.append(g.iloc[cut:])
-    train_df = pd.concat(train_parts)
-    val_df = pd.concat(val_parts)
+        df = pd.read_parquet(args.data) if args.data else _synthetic_slope_frame()
 
-    scaler = StandardScaler().fit(train_df[FEATURES].to_numpy())
-    for part in (train_df, val_df):
-        for i, f in enumerate(FEATURES):
-            part[f] = (part[f] - scaler.mean_[i]) / scaler.scale_[i]
+        df = df.sort_values(["slope_id", "timestamp"])
+        train_parts, val_parts = [], []
+        for _, g in df.groupby("slope_id"):
+            cut = int(len(g) * (1 - args.val_split))
+            train_parts.append(g.iloc[:cut])
+            val_parts.append(g.iloc[cut:])
+        train_df = pd.concat(train_parts)
+        val_df = pd.concat(val_parts)
 
-    X_train, y_train = _build_sequences(train_df, FEATURES, SEQUENCE_LENGTH)
-    X_val, y_val = _build_sequences(val_df, FEATURES, SEQUENCE_LENGTH)
+        scaler = StandardScaler().fit(train_df[FEATURES].to_numpy())
+        for part in (train_df, val_df):
+            for i, f in enumerate(FEATURES):
+                part[f] = (part[f] - scaler.mean_[i]) / scaler.scale_[i]
 
-    model = build_model()
-    spec = ModelSpec()
+        X_train, y_train = _build_sequences(train_df, FEATURES, SEQUENCE_LENGTH)
+        X_val, y_val = _build_sequences(val_df, FEATURES, SEQUENCE_LENGTH)
+        run.log_params(
+            {
+                "train_windows": int(X_train.shape[0]),
+                "val_windows": int(X_val.shape[0]),
+            }
+        )
 
-    # Custom physics-informed loss. We compare the network output to the
-    # already-FoS-derived label; the same constraint is enforced again
-    # through a smoothness term on consecutive windows to match the
-    # monotonic behaviour of real slope deterioration.
-    bce = tf.keras.losses.BinaryCrossentropy()
+        model = build_model()
+        spec = ModelSpec()
 
-    def physics_loss(y_true, y_pred):
-        data = bce(y_true, y_pred)
-        smooth = tf.reduce_mean(tf.square(y_pred[1:] - y_pred[:-1]))
-        return data + spec.physics_lambda * smooth
+        bce = tf.keras.losses.BinaryCrossentropy()
 
-    model.compile(optimizer=tf.keras.optimizers.Adam(1e-3), loss=physics_loss, metrics=["mae"])
+        def physics_loss(y_true, y_pred):
+            data = bce(y_true, y_pred)
+            smooth = tf.reduce_mean(tf.square(y_pred[1:] - y_pred[:-1]))
+            return data + spec.physics_lambda * smooth
 
-    model.fit(
-        X_train, y_train,
-        validation_data=(X_val, y_val),
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        callbacks=[
-            tf.keras.callbacks.EarlyStopping(patience=8, restore_best_weights=True),
-            tf.keras.callbacks.ReduceLROnPlateau(factor=0.5, patience=4),
-        ],
-    )
+        model.compile(optimizer=tf.keras.optimizers.Adam(1e-3), loss=physics_loss, metrics=["mae"])
 
-    model.save(out_dir / "slopewatch.keras")
-    with open(out_dir / "scaler.pkl", "wb") as f:
-        pickle.dump(scaler, f)
+        class _MLflowCallback(tf.keras.callbacks.Callback):
+            def on_epoch_end(self, epoch, logs=None):
+                if not logs:
+                    return
+                run.log_metrics({k: float(v) for k, v in logs.items()}, step=epoch)
 
-    converter = tf.lite.TFLiteConverter.from_keras_model(model)
-    converter.optimizations = [tf.lite.Optimize.DEFAULT]
-    (out_dir / "slopewatch.tflite").write_bytes(converter.convert())
-    print(f"slopewatch artifacts written to {out_dir}")
+        history = model.fit(
+            X_train, y_train,
+            validation_data=(X_val, y_val),
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            callbacks=[
+                tf.keras.callbacks.EarlyStopping(patience=8, restore_best_weights=True),
+                tf.keras.callbacks.ReduceLROnPlateau(factor=0.5, patience=4),
+                _MLflowCallback(),
+            ],
+        )
+
+        val_loss = min(history.history.get("val_loss", [float("inf")]))
+        val_mae = min(history.history.get("val_mae", [float("inf")]))
+        run.log_metrics({"best_val_loss": float(val_loss), "best_val_mae": float(val_mae)})
+
+        model.save(out_dir / "slopewatch.keras")
+        # Phase 2.1 §5: ship scalers as JSON. pickle.load is an RCE surface.
+        (out_dir / "scaler.json").write_text(json.dumps({
+            "mean": scaler.mean_.tolist(),
+            "scale": scaler.scale_.tolist(),
+            "features": FEATURES,
+        }, indent=2))
+        (out_dir / "metadata.json").write_text(json.dumps({
+            "features": FEATURES,
+            "sequence_length": SEQUENCE_LENGTH,
+            "physics_lambda": ModelSpec().physics_lambda,
+        }, indent=2))
+
+        converter = tf.lite.TFLiteConverter.from_keras_model(model)
+        converter.optimizations = [tf.lite.Optimize.DEFAULT]
+        (out_dir / "slopewatch.tflite").write_bytes(converter.convert())
+
+        for art in ("slopewatch.tflite", "scaler.json", "metadata.json"):
+            run.log_artifact(out_dir / art)
+        write_run_manifest(
+            out_dir,
+            {
+                "model": "slopewatch",
+                "run_name": run_name,
+                "data_path": str(args.data) if args.data else "synthetic",
+                "data_sha256": (
+                    data_checksum(Path(args.data)) if args.data else "synthetic"
+                ),
+                "best_val_loss": float(val_loss),
+                "best_val_mae": float(val_mae),
+                "created_at": dt.datetime.utcnow().isoformat() + "Z",
+            },
+        )
+        print(f"slopewatch artifacts written to {out_dir}")
 
 
 if __name__ == "__main__":

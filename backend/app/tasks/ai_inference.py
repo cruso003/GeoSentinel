@@ -95,11 +95,29 @@ async def _slopewatch_all() -> int:
         return n
 
 
-@celery_app.task(name="app.tasks.ai_inference.run_enviroguard_all_sites")
+@celery_app.task(
+    name="app.tasks.ai_inference.run_enviroguard_all_sites",
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=300,
+    retry_jitter=True,
+    max_retries=3,
+    time_limit=10 * 60,
+    soft_time_limit=8 * 60,
+)
 def run_enviroguard_all_sites() -> int:
     return asyncio.run(_enviroguard_all())
 
 
-@celery_app.task(name="app.tasks.ai_inference.run_slopewatch_all_sites")
+@celery_app.task(
+    name="app.tasks.ai_inference.run_slopewatch_all_sites",
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=120,
+    retry_jitter=True,
+    max_retries=3,
+    time_limit=5 * 60,
+    soft_time_limit=4 * 60,
+)
 def run_slopewatch_all_sites() -> int:
     return asyncio.run(_slopewatch_all())
