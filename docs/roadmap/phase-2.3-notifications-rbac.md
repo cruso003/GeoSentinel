@@ -67,8 +67,15 @@ profile/subscription/test-alert/admin endpoints), + the Phase 2.3 UI slice.
       `backend/app/services/notifications_templates/` — English, Mano, Gio.
       `render(language, key, **fields)` falls back to English, then to a
       generic one-liner, so new alert types never silence the channel.
-- [ ] Community opt-in via a public signup form with SMS confirmation.
-      *(Follow-up — ties into the Phase 3 community PWA.)*
+- [x] Community opt-in via a public signup form with SMS confirmation.
+      `POST /community/subscribe` issues a 6-digit code (stored only as
+      SHA-256 hash, 10-min TTL) and sends it via the existing
+      `community_confirm` template (en/mano/gio). `POST /community/confirm`
+      redeems the code in constant time, provisions a `community`-role user,
+      and writes an SMS `notification_subscription` at `min_severity=CRITICAL`.
+      Both endpoints are rate-limited per-IP and per-phone. Frontend signup
+      card in `CommunityView`. Unit coverage:
+      `backend/tests/test_community_opt_in.py`.
 - [ ] GDPR/personal-data retention policy documented. *(Follow-up.)*
 
 ### Digests

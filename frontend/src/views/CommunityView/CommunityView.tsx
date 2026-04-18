@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { ChevronDown, Compass, Droplets, Mountain, Wind } from 'lucide-react';
 import { useAIStore } from '@/store/aiStore';
 import { useSensorStore } from '@/store/sensorStore';
@@ -6,6 +7,7 @@ import { fmtAgo } from '@/utils/format';
 import { checkCompliance } from '@/utils/ifc-thresholds';
 import { clsx } from '@/utils/clsx';
 import type { PlainStatus } from '@/types';
+import { OptInCard } from './OptInCard';
 
 const TONE_BG: Record<PlainStatus, string> = {
   GOOD: 'bg-emerald-50 ring-emerald-300 text-emerald-900',
@@ -32,6 +34,7 @@ interface StatusCard {
 }
 
 export function CommunityView() {
+  const { siteId = 'tokadeh-pilot' } = useParams();
   const env = useSensorStore((s) => s.latestEnvReadings);
   const slopes = useAIStore((s) => s.slopeWatchPredictions);
 
@@ -130,6 +133,8 @@ export function CommunityView() {
         {cards.map((c) => (
           <CommunityCard key={c.key} card={c} />
         ))}
+
+        <OptInCard siteId={siteId} />
 
         <IncidentHistory />
 

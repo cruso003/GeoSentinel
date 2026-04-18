@@ -8,16 +8,85 @@ an account.
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.db import get_db
 from ...models.site import Site
+from ...schemas.community import (
+    CommunityConfirmResponse,
+    CommunityOptInConfirm,
+    CommunityOptInRequest,
+    CommunityOptInResponse,
+)
 from ...schemas.entities import CommunityStatusOut
+from ...services.community_opt_in import (
+    OptInError,
+    confirm_opt_in,
+    request_opt_in,
+)
 from ...services.enviroguard import run_enviroguard
 from ...services.influx import influx
+from ...services.notifications import notifications
+from ...services.rate_limit import RateLimitExceeded, hit as rate_limit_hit
 
 router = APIRouter(prefix="/community", tags=["community"])
+
+# Opt-in rate limits (sliding window):
+#   - Per-IP:    10 subscribe attempts / 15 min — stops a single host spraying.
+#   - Per-phone:  3 subscribe attempts / 15 min — caps SMS cost for one number.
+#   - Per-phone: 10 confirm attempts / 15 min — combined with MAX_ATTEMPTS in
+#                the row, makes brute-force infeasible before the code expires.
+_OPT_IN_IP_LIMIT = 10
+_OPT_IN_PHONE_LIMIT = 3
+_CONFIRM_PHONE_LIMIT = 10
+_OPT_IN_WINDOW_S = 15 * 60
+
+
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+async def _guard_opt_in(request: Request, *, phone: str) -> None:
+    ip = _client_ip(request)
+    try:
+        await rate_limit_hit(
+            f"community:optin:ip:{ip}",
+            limit=_OPT_IN_IP_LIMIT,
+            window_s=_OPT_IN_WINDOW_S,
+        )
+        await rate_limit_hit(
+            f"community:optin:phone:{phone}",
+            limit=_OPT_IN_PHONE_LIMIT,
+            window_s=_OPT_IN_WINDOW_S,
+        )
+    except RateLimitExceeded as e:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many opt-in attempts. Please retry later.",
+            headers={"Retry-After": str(e.retry_after_s)},
+        ) from None
+
+
+async def _guard_confirm(request: Request, *, phone: str) -> None:
+    ip = _client_ip(request)
+    try:
+        await rate_limit_hit(
+            f"community:confirm:ip:{ip}",
+            limit=_OPT_IN_IP_LIMIT,
+            window_s=_OPT_IN_WINDOW_S,
+        )
+        await rate_limit_hit(
+            f"community:confirm:phone:{phone}",
+            limit=_CONFIRM_PHONE_LIMIT,
+            window_s=_OPT_IN_WINDOW_S,
+        )
+    except RateLimitExceeded as e:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many confirmation attempts. Please retry later.",
+            headers={"Retry-After": str(e.retry_after_s)},
+        ) from None
 
 
 def _water_tone(ph: float | None, turb: float | None, cond: float | None) -> tuple[str, str]:
@@ -106,4 +175,67 @@ async def community_status(
             "risk_24h": pred.overall_risk_24h,
             "as_of": now,
         },
+    )
+
+
+@router.post(
+    "/subscribe",
+    response_model=CommunityOptInResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def subscribe(
+    body: CommunityOptInRequest,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Request an SMS confirmation code for a (phone, site) pair.
+
+    Public + rate-limited. The response always carries ``expires_at`` so the
+    caller can show a countdown; ``debug_code`` is populated only in dev
+    (noop SMS provider) to keep smoke-tests fast.
+    """
+    await _guard_opt_in(request, phone=body.phone_number)
+    site = await db.get(Site, body.site_id)
+    if not site:
+        raise HTTPException(status_code=404, detail="Site not found")
+    try:
+        result = await request_opt_in(
+            db,
+            phone=body.phone_number,
+            site_id=body.site_id,
+            language=body.language,
+            service=notifications,
+        )
+    except OptInError as e:
+        raise HTTPException(status_code=400, detail=e.reason) from None
+    return CommunityOptInResponse(
+        phone_number=result.phone_number,
+        site_id=result.site_id,
+        expires_at=result.expires_at,
+        debug_code=result.debug_code,
+    )
+
+
+@router.post("/confirm", response_model=CommunityConfirmResponse)
+async def confirm(
+    body: CommunityOptInConfirm,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Redeem a confirmation code, provisioning a community user + active
+    SMS subscription for the site. Public + rate-limited. ``OptInError`` →
+    400 with a user-visible reason."""
+    await _guard_confirm(request, phone=body.phone_number)
+    try:
+        result = await confirm_opt_in(
+            db,
+            phone=body.phone_number,
+            site_id=body.site_id,
+            code=body.code,
+        )
+    except OptInError as e:
+        raise HTTPException(status_code=400, detail=e.reason) from None
+    return CommunityConfirmResponse(
+        user_id=result.user_id,
+        subscription_id=result.subscription_id,
     )
