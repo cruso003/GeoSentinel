@@ -24,6 +24,7 @@ celery_app = Celery(
         "app.tasks.insar_processing",
         "app.tasks.escalation",
         "app.tasks.drift",
+        "app.tasks.retrain",
     ],
 )
 
@@ -48,6 +49,8 @@ celery_app.conf.update(
         "app.tasks.report_generation.*": {"queue": "default"},
         "app.tasks.escalation.*": {"queue": "default"},
         "app.tasks.drift.*": {"queue": "default"},
+        # Retrain routes to the ml queue because the (opt-in) body runs TF.
+        "app.tasks.retrain.*": {"queue": "ml"},
     },
     beat_schedule={
         "enviroguard-15min": {
@@ -74,6 +77,13 @@ celery_app.conf.update(
             "task": "app.tasks.drift.sweep_model_drift",
             "schedule": crontab(hour=2, minute=30),
             "options": {"queue": "default", "expires": 60 * 60},
+        },
+        # Weekly retrain — no-op until enable_retrain_loop=True. Cadence is
+        # Sunday 04:00 UTC so it lands after the InSAR sweep finishes.
+        "retrain-weekly": {
+            "task": "app.tasks.retrain.sweep_retrain",
+            "schedule": crontab(hour=4, minute=0, day_of_week=0),
+            "options": {"queue": "ml", "expires": 2 * 60 * 60},
         },
     },
 )

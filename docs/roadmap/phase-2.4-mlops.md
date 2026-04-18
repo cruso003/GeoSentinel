@@ -32,8 +32,12 @@ tracked, evaluated, drift-monitored production models.
 - [x] `ai/_mlflow.py` no-op shim: when `MLFLOW_TRACKING_URI` is unset
       (laptop / CI), training still runs and writes a local `run.json`
       manifest next to the artifacts.
-- [ ] Tagged model promotion (`Staging` → `Production`) — needs the
-      retraining loop below to be in place first.
+- [x] Tagged model promotion (`candidate` → `staging` → `production` →
+      `archived`) via `ModelVersion` registry (`backend/app/models/`
+      `model_version.py`, migration `0007_model_registry`). Admin-only
+      `/api/v1/models/{name}/versions` + `/promote` endpoints run the
+      gate and rotate production atomically; `ai/promote.py` CLI wraps
+      the two calls for the trainer.
 
 ### Evaluation harness
 - [x] `backend/app/services/evaluation.py` — stdlib ROC-AUC
@@ -43,8 +47,14 @@ tracked, evaluated, drift-monitored production models.
       reports. Degenerate slices return `None` rather than raising.
 - [ ] Fixed evaluation split with the last 4 weeks held out (needs real
       label data).
-- [ ] Evaluation gates: new model must beat current in prod on both AUCs and
-      not regress > 2 % on any per-node slice (needs retraining loop).
+- [x] Evaluation gates implemented in `app/services/model_registry.py`
+      `evaluate_gate()`: candidate must not regress ROC-AUC
+      (`MIN_AUC_IMPROVEMENT=0.0`), not regress PR-AUC by more than 2 %
+      (`MAX_PR_AUC_REGRESSION`), and not regress any per-slice AUC by
+      more than 2 % (`MAX_SLICE_AUC_REGRESSION`). Rejected attempts are
+      still audited so bypass attempts are visible; `force=True` writes
+      a distinct `promote_model_forced` entry. Held-out split with real
+      labels is still pending data access.
 
 ### Explanations
 - [ ] SHAP values for EnviroGuard (TreeExplainer won't apply — use
@@ -76,9 +86,20 @@ tracked, evaluated, drift-monitored production models.
       "everything is 0.5 now" failure mode.
 
 ### Retraining loop
-- [ ] Weekly Celery task (gated) retrains on the latest window.
-- [ ] Runs `ai/evaluate.py`; auto-promotes only if gates pass.
-- [ ] Audit log entry for every promotion.
+- [x] Weekly Celery task `app.tasks.retrain.sweep_retrain` (Sunday 04:00
+      UTC, `ml` queue) shells out to `ai/enviroguard/train.py` +
+      `ai/slopewatch/train.py`. Gated on `enable_retrain_loop` so the
+      default backend image doesn't need TensorFlow — only the dedicated
+      trainer image flips it on.
+- [x] `ai/promote.py` CLI reads `run.json` from the training job,
+      registers the candidate (`POST /models/{name}/versions`), and asks
+      the API to promote it (`POST /…/promote`). The promote endpoint
+      runs `evaluate_gate` and only rotates production when gates pass.
+- [x] Every promotion attempt — accepted, rejected, or forced — lands in
+      the hash-chain audit log (`promote_model`, `promote_model_rejected`,
+      `promote_model_forced`). Retrain task itself emits
+      `retrain_succeeded` / `retrain_failed` with the trainer stdout/err
+      trailer.
 
 ### Acceptance
 

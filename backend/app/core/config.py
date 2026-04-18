@@ -70,6 +70,11 @@ class Settings(BaseSettings):
     model_signing_pubkey: str = Field(default="")
     model_signing_required: bool = Field(default=False)
 
+    # Phase 2.4 §5 retraining. The weekly Celery task is a no-op until this
+    # flag is flipped so the default `backend` image (which doesn't ship
+    # TensorFlow) stays lean. Set to True in a dedicated `trainer` image.
+    enable_retrain_loop: bool = Field(default=False)
+
     # Cookie-based refresh flow (Phase 2.1 §10).
     refresh_cookie_name: str = Field(default="gs_refresh")
     refresh_cookie_path: str = Field(default="/api/v1/auth")
