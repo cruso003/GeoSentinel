@@ -28,8 +28,8 @@ class TrainingLabel(Base):
     site_id: Mapped[str] = mapped_column(String(64), ForeignKey("sites.id"), index=True)
     node_id: Mapped[str] = mapped_column(String(64), index=True)
     parameter: Mapped[str] = mapped_column(String(64))
-    t_start: Mapped[datetime] = mapped_column(DateTime)
-    t_end: Mapped[datetime] = mapped_column(DateTime)
+    t_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    t_end: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     # Label is a free-form string so EnviroGuard (``exceedance``) and
     # SlopeWatch (``creep`` / ``failure``) can share the table.
     label: Mapped[str] = mapped_column(String(64))
@@ -37,4 +37,4 @@ class TrainingLabel(Base):
     # harness filters on this to keep metrics honest.
     source: Mapped[str] = mapped_column(String(32))
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -35,7 +35,7 @@ class NotificationSubscription(Base):
     channel: Mapped[str] = mapped_column(String(16))  # email | sms | push
     min_severity: Mapped[str] = mapped_column(String(16), default="CRITICAL")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class UserSite(Base):
@@ -48,7 +48,7 @@ class UserSite(Base):
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
     site_id: Mapped[str] = mapped_column(String(64), ForeignKey("sites.id"), index=True)
     role: Mapped[str] = mapped_column(String(32))  # operator | esg_admin | community
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class EscalationStep(Base):
@@ -63,4 +63,4 @@ class EscalationStep(Base):
     site_id: Mapped[str] = mapped_column(String(64), ForeignKey("sites.id"), index=True)
     position: Mapped[int] = mapped_column(Integer)
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"))
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

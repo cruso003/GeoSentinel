@@ -17,7 +17,7 @@ class Site(Base):
     centroid_lat: Mapped[float] = mapped_column(Float)
     centroid_lng: Mapped[float] = mapped_column(Float)
     boundary_geojson: Mapped[dict] = mapped_column(JSON)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     nodes: Mapped[list["SensorNode"]] = relationship(back_populates="site", cascade="all, delete-orphan")
     slopes: Mapped[list["MineSlope"]] = relationship(back_populates="site", cascade="all, delete-orphan")
@@ -35,7 +35,7 @@ class SensorNode(Base):
     elevation_m: Mapped[float] = mapped_column(Float, default=0.0)
     battery_pct: Mapped[int] = mapped_column(Integer, default=100)
     signal_rssi: Mapped[int] = mapped_column(Integer, default=-70)
-    last_seen: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     status: Mapped[str] = mapped_column(String(16), default="ONLINE")
     calibration_due: Mapped[date] = mapped_column(Date)
 
