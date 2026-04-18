@@ -12,7 +12,9 @@ class EnviroGuardPrediction(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     site_id: Mapped[str] = mapped_column(String(64), ForeignKey("sites.id"), index=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
     ph_exceedance_24h: Mapped[float] = mapped_column(Float)
     turbidity_exceedance_24h: Mapped[float] = mapped_column(Float)
     do_exceedance_24h: Mapped[float] = mapped_column(Float)
@@ -31,7 +33,9 @@ class SlopeWatchPrediction(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     site_id: Mapped[str] = mapped_column(String(64), ForeignKey("sites.id"), index=True)
     slope_id: Mapped[str] = mapped_column(String(64), ForeignKey("mine_slopes.id"), index=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
     risk_score: Mapped[float] = mapped_column(Float)
     alert_tier: Mapped[str] = mapped_column(String(16))
     pore_pressure_factor: Mapped[float] = mapped_column(Float)
