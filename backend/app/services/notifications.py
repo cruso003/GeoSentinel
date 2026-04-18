@@ -35,6 +35,17 @@ def _rank(sev: str) -> int:
 
 
 class NotificationService:
+    def _has_sms_provider(self) -> bool:
+        """True when Twilio creds are fully configured. The community
+        opt-in flow uses this to decide whether to expose the dev-only
+        debug code in its response (safe only when ``direct`` is a noop)."""
+        settings = get_settings()
+        return bool(
+            settings.twilio_account_sid
+            and settings.twilio_auth_token
+            and settings.twilio_from_number
+        )
+
     async def direct(
         self,
         *,

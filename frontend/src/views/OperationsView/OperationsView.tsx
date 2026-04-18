@@ -7,6 +7,7 @@ import { GeotechnicalTab } from './GeotechnicalTab';
 import { TwinTab } from './TwinTab';
 import { AlertsTab } from './AlertsTab';
 import { NodeHealthTab } from './NodeHealthTab';
+import { ProfileTab } from './ProfileTab';
 
 export function OperationsView() {
   return (
@@ -22,6 +23,7 @@ export function OperationsView() {
             <Route path="twin" element={<TwinTab />} />
             <Route path="alerts" element={<AlertsTab />} />
             <Route path="nodes" element={<NodeHealthTab />} />
+            <Route path="profile" element={<ProfileTab />} />
           </Routes>
         </div>
       </main>

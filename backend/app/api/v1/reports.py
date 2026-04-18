@@ -17,6 +17,7 @@ from ...models.user import User
 from ...schemas.entities import ReportGenerateRequest, ReportOut
 from ...services import audit
 from ...services.report_generator import REPORTS_DIR, generate_report
+from ...services.report_stats import collect_compliance_stats
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -70,14 +71,23 @@ async def generate(
     await db.commit()
     await db.refresh(report)
 
-    # Phase 1: synchronous generation; Phase 2 moves this to Celery.
+    # Phase 3: synchronous generation with real stats from the alert log.
+    # Moving to Celery is the next step once the PDF starts including
+    # fetched InfluxDB telemetry windows.
     try:
+        data = await collect_compliance_stats(
+            db,
+            site_id=body.site_id,
+            period_start=body.period_start,
+            period_end=body.period_end,
+        )
         path, integrity = generate_report(
             report_id=report.id,
             site_name=site.name,
             period_start=body.period_start,
             period_end=body.period_end,
             report_type=body.report_type,
+            data=data,
         )
         report.status = "ready"
         report.download_url = f"/api/v1/reports/{report.id}/download"

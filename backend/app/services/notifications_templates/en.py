@@ -18,4 +18,7 @@ TEMPLATES = {
     "test":
         "GeoSentinel test alert for {site}. You have successfully subscribed "
         "to community notifications.",
+    "community_confirm":
+        "GeoSentinel: your confirmation code for {site} alerts is {code}. "
+        "Expires in 10 minutes.",
 }

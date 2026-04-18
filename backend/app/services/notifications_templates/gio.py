@@ -17,4 +17,7 @@ TEMPLATES = {
         "GeoSentinel: Taa e gba {site}. Yi to mi ya gbanga wi.",
     "test":
         "GeoSentinel: Yee-test {site} mee. I sii kpo ma yi.",
+    "community_confirm":
+        "GeoSentinel: i nammba-kpo ma {site} e yia {code}. "
+        "E ya gbo na 10 minit.",
 }

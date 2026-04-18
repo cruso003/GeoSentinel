@@ -31,6 +31,14 @@ export interface ProfileOut {
   role: string;
 }
 
+export interface MySite {
+  id: string;
+  name: string;
+  region: string;
+  country: string;
+  centroid: { lat: number; lng: number };
+}
+
 export function listMySubscriptions(): Promise<Subscription[]> {
   return api.get<Subscription[]>('/subscriptions');
 }
@@ -74,4 +82,12 @@ export function updateProfile(body: {
 
 export function listSubscribers(): Promise<SubscriberRow[]> {
   return api.get<SubscriberRow[]>('/admin/subscribers');
+}
+
+export function getProfile(): Promise<ProfileOut> {
+  return api.get<ProfileOut>('/profile');
+}
+
+export function getMySites(): Promise<MySite[]> {
+  return api.get<MySite[]>('/me/sites');
 }

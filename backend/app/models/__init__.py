@@ -1,6 +1,7 @@
 from .ai import EnviroGuardPrediction, SlopeWatchPrediction
 from .alert import Alert
 from .audit import AuditLog
+from .community import CommunityOptIn
 from .gateway import SensorGateway
 from .model_version import ModelVersion
 from .notifications import EscalationStep, NotificationSubscription, UserSite
@@ -25,4 +26,5 @@ __all__ = [
     "UserSite",
     "TrainingLabel",
     "ModelVersion",
+    "CommunityOptIn",
 ]
