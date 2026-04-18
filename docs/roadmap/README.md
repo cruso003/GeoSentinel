@@ -31,5 +31,14 @@ auth-cookie migration for last because it touches both stacks:
 9. Audit log hash chain ✅ `cb1946c`
 10. `HttpOnly` refresh cookie + CSRF double-submit ✅ `c8aeeeb` (SPA migration follows)
 
+Phase 2.2 (operational maturity) landed across
+`e7761b0`, `370db59`, `82e8736`, `2d1aea9`.
+
+Phase 2.3 (notifications + RBAC) backend landed in `e1e6dee`:
+subscriptions schema, `require_site_role`, escalation sweep, local-language
+templates, profile + subscription + test-alert + admin-subscribers
+endpoints. UI slice (profile page, admin subscribers table, test-alert
+button) is the remaining follow-up.
+
 Mark items in each phase doc with `[x]` when they land; reference the commit
 in the checklist so the doc doubles as a traceability record.

@@ -5,7 +5,9 @@ user to the sites they are allowed to see.
 
 Status: **backend landed.** Frontend Profile / admin subscribers page is the
 remaining follow-up — the API surface is complete, typed, and seeded so the
-UI work is a straight render. Commits: TBD (Phase 2.3 batch).
+UI work is a straight render. Commit: `e1e6dee` (subscriptions schema,
+`require_site_role`, escalation sweep, local-language templates,
+profile/subscription/test-alert/admin endpoints).
 
 ## Checklist
 
