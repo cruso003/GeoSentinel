@@ -72,9 +72,14 @@ profile/subscription/test-alert/admin endpoints), + the Phase 2.3 UI slice.
 - [ ] GDPR/personal-data retention policy documented. *(Follow-up.)*
 
 ### Digests
-- [ ] Daily email digest of WATCH/WARNING events for subscribed operators.
-      *(Follow-up. Escalation covers CRITICAL, so digests are the next
-      notification slice rather than a blocker.)*
+- [x] Daily email digest (`app.services.digest.build_digests` +
+      `app.tasks.digest.send_daily_digest`, beat 07:00 UTC, `default`
+      queue). Rolls up the last 24 h of WARNING+ alerts per subscribed
+      site for every user with an active email subscription, skips users
+      subscribed only at CRITICAL (they already got real-time pages),
+      and dedupes per (user, UTC date) via an audit-log
+      `digest_sent` row so re-running the task inside the same day is a
+      no-op. Unit coverage: `backend/tests/test_digest.py`.
 - [ ] Weekly IFC summary PDF for ESG admins (see Phase 3 for the full
       report pipeline).
 

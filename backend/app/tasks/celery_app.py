@@ -25,6 +25,7 @@ celery_app = Celery(
         "app.tasks.escalation",
         "app.tasks.drift",
         "app.tasks.retrain",
+        "app.tasks.digest",
     ],
 )
 
@@ -51,6 +52,7 @@ celery_app.conf.update(
         "app.tasks.drift.*": {"queue": "default"},
         # Retrain routes to the ml queue because the (opt-in) body runs TF.
         "app.tasks.retrain.*": {"queue": "ml"},
+        "app.tasks.digest.*": {"queue": "default"},
     },
     beat_schedule={
         "enviroguard-15min": {
@@ -84,6 +86,14 @@ celery_app.conf.update(
             "task": "app.tasks.retrain.sweep_retrain",
             "schedule": crontab(hour=4, minute=0, day_of_week=0),
             "options": {"queue": "ml", "expires": 2 * 60 * 60},
+        },
+        # Daily digest fires at 07:00 UTC — late enough that overnight
+        # alerts are captured in the 24 h window but early enough to be in
+        # the operator's morning inbox.
+        "digest-daily": {
+            "task": "app.tasks.digest.send_daily_digest",
+            "schedule": crontab(hour=7, minute=0),
+            "options": {"queue": "default", "expires": 60 * 60},
         },
     },
 )
