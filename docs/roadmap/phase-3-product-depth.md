@@ -38,10 +38,24 @@ BHP Africa).
       review — currently unused).
 
 ### IFC PDF reports
-- [ ] ReportLab template matching Spec §15.4.
-- [ ] Auto-generated from `/reports/generate` and stored on object storage.
-- [ ] SHA-256 pinned in `ComplianceReport.data_integrity_hash`.
+- [x] ReportLab template matching Spec §15.4. The generator now renders
+      real per-parameter compliance stats pulled from the alert log, a
+      capped exceedance event log (CRITICAL/EVACUATION only, newest first),
+      and a geohazard summary built from SlopeWatchPrediction rows for the
+      period. `ReportData` ships as a frozen dataclass so the renderer and
+      stats collector can't drift.
+- [x] Auto-generated from `/reports/generate` — ESG admin only — and the
+      frontend ReportPanel issues the call, polls status, and downloads via
+      authenticated fetch → Blob (cookies + bearer-token safe). Object
+      storage is still `/tmp/geosentinel-reports` on disk; S3 upload is a
+      follow-up.
+- [x] SHA-256 pinned in `ComplianceReport.data_integrity_hash`; derived from
+      every row the renderer consumed (stats + log + geohazard), so a
+      reviewer can re-hash the source data to verify. Unit coverage:
+      `backend/tests/test_report_stats.py`.
 - [ ] Sign with an offline key.
+- [ ] Move generation onto Celery (`ml` queue) so quarterly reports can
+      include InfluxDB aggregates without blocking the request thread.
 
 ### Mobile native
 - [ ] Expo/React Native app for operators (twin view, alerts, ack, camera

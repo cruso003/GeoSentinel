@@ -12,11 +12,14 @@ import {
 } from 'recharts';
 import { Card } from '@/components/ui/Card';
 import { useUIStore } from '@/store/uiStore';
+import { useAuthStore } from '@/store/authStore';
 import { useSensorStore } from '@/store/sensorStore';
 import { checkCompliance } from '@/utils/ifc-thresholds';
 import { clsx } from '@/utils/clsx';
 import { format, parseISO, subDays } from 'date-fns';
-import type { ReportType, ReportStatus } from '@/types';
+import type { ComplianceReport, ReportStatus, ReportType } from '@/types';
+import { ApiError } from '@/api/client';
+import { downloadReport, generateReport } from '@/api/reports';
 
 interface ScoreCard {
   label: string;
@@ -101,31 +104,98 @@ function ScoreCardView({ card, light }: { card: ScoreCard; light: boolean }) {
 }
 
 function ReportPanel({ light }: { light: boolean }) {
+  const isMock = useAuthStore((s) => s.session?.access_token.startsWith('mock-') ?? true);
   const [type, setType] = useState<ReportType>('IFC_PERFORMANCE');
+  const [periodStart, setPeriodStart] = useState(() => format(subDays(new Date(), 30), 'yyyy-MM-dd'));
+  const [periodEnd, setPeriodEnd] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const [status, setStatus] = useState<ReportStatus>('pending');
   const [progress, setProgress] = useState<string>('');
-  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [report, setReport] = useState<ComplianceReport | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
 
   const run = async () => {
+    setError(null);
+    setReport(null);
     setStatus('generating');
-    setDownloadUrl(null);
-    const steps = ['Collecting data...', 'Running AI analysis...', 'Generating PDF...'];
-    for (const s of steps) {
-      setProgress(s);
-      await new Promise((r) => setTimeout(r, 900));
+    setProgress('Collecting compliance stats...');
+
+    if (isMock) {
+      // Walkthrough / demo mode — don't hit the real API so scenarios stay
+      // side-effect free. Simulate a short delay and a synthetic integrity
+      // hash so the UI still shows a plausible PDF handoff.
+      const steps = ['Collecting compliance stats...', 'Running AI analysis...', 'Rendering PDF...'];
+      for (const s of steps) {
+        setProgress(s);
+        await new Promise((r) => setTimeout(r, 600));
+      }
+      setReport({
+        id: 'mock-' + Math.random().toString(36).slice(2, 8),
+        site_id: 'tokadeh-pilot',
+        report_type: type,
+        period_start: `${periodStart}T00:00:00Z`,
+        period_end: `${periodEnd}T23:59:59Z`,
+        status: 'ready',
+        download_url: null,
+        generated_at: new Date().toISOString(),
+        data_integrity_hash: Array.from({ length: 64 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join(''),
+      });
+      setStatus('ready');
+      return;
     }
-    setStatus('ready');
-    setDownloadUrl('#'); // wired to backend in Phase 2
+
+    try {
+      setProgress('Contacting backend...');
+      const res = await generateReport({
+        site_id: 'tokadeh-pilot',
+        period_start: `${periodStart}T00:00:00Z`,
+        period_end: `${periodEnd}T23:59:59Z`,
+        report_type: type,
+      });
+      setReport(res);
+      setStatus(res.status);
+      if (res.status === 'failed') {
+        setError('Backend could not render the report.');
+      }
+    } catch (err) {
+      setStatus('failed');
+      if (err instanceof ApiError) {
+        setError(err.status === 403 ? 'ESG admin role required.' : err.message || 'Report request failed.');
+      } else {
+        setError('Report request failed.');
+      }
+    } finally {
+      setProgress('');
+    }
+  };
+
+  const onDownload = async () => {
+    if (!report) return;
+    if (isMock) {
+      setError('Mock mode: PDF download is disabled in the demo. Log in to see the real file.');
+      return;
+    }
+    setDownloading(true);
+    setError(null);
+    try {
+      await downloadReport(report);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not download the PDF.');
+    } finally {
+      setDownloading(false);
+    }
   };
 
   return (
-    <Card title="Generate Compliance Report" subtitle="Asynchronous, ReportLab-based PDF">
+    <Card title="Generate Compliance Report" subtitle="ReportLab PDF backed by the alert log + slope predictions">
       <div className="grid gap-3 md:grid-cols-3">
         <label className="text-xs">
           <span className="opacity-60">Period start</span>
           <input
             type="date"
-            defaultValue={format(subDays(new Date(), 30), 'yyyy-MM-dd')}
+            value={periodStart}
+            max={periodEnd}
+            onChange={(e) => setPeriodStart(e.target.value)}
             className={clsx('mt-1 w-full rounded-md border px-2 py-1 text-sm', light ? 'border-slate-300 bg-white text-slate-900' : 'border-bg-line bg-bg-deep text-slate-100')}
           />
         </label>
@@ -133,7 +203,9 @@ function ReportPanel({ light }: { light: boolean }) {
           <span className="opacity-60">Period end</span>
           <input
             type="date"
-            defaultValue={format(new Date(), 'yyyy-MM-dd')}
+            value={periodEnd}
+            min={periodStart}
+            onChange={(e) => setPeriodEnd(e.target.value)}
             className={clsx('mt-1 w-full rounded-md border px-2 py-1 text-sm', light ? 'border-slate-300 bg-white text-slate-900' : 'border-bg-line bg-bg-deep text-slate-100')}
           />
         </label>
@@ -150,17 +222,28 @@ function ReportPanel({ light }: { light: boolean }) {
           </select>
         </label>
       </div>
-      <div className="mt-3 flex items-center gap-3">
+      <div className="mt-3 flex flex-wrap items-center gap-3">
         <button type="button" className="gs-button-primary" onClick={run} disabled={status === 'generating'}>
           <FileText className="h-4 w-4" /> Generate
         </button>
         {status === 'generating' && <span className="text-xs opacity-70">{progress}</span>}
-        {status === 'ready' && downloadUrl && (
-          <a className="gs-button" href={downloadUrl}>
-            <Download className="h-4 w-4" /> Download PDF
-          </a>
+        {status === 'ready' && report && (
+          <button type="button" className="gs-button" onClick={onDownload} disabled={downloading}>
+            <Download className="h-4 w-4" />
+            {downloading ? 'Preparing…' : 'Download PDF'}
+          </button>
+        )}
+        {status === 'ready' && report?.data_integrity_hash && (
+          <span className="font-mono text-[10px] opacity-60">
+            SHA-256 {report.data_integrity_hash.slice(0, 12)}…
+          </span>
         )}
       </div>
+      {error && (
+        <p className="mt-2 rounded-md bg-red-100/60 px-2 py-1 text-xs text-red-800 ring-1 ring-red-200">
+          {error}
+        </p>
+      )}
     </Card>
   );
 }
