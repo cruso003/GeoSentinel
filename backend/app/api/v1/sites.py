@@ -1,4 +1,4 @@
-from typing import Annotated, List
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -6,21 +6,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ...core.db import get_db
-from ...core.deps import require_roles
+from ...core.deps import require_roles, require_site_role
 from ...models.site import MineSlope, SensorNode, Site
+from ...models.user import User
 from ...schemas.entities import MineSlopeOut, SensorNodeOut, SiteOut, SiteSummary
+from ...services.rbac import allowed_site_ids
 
 router = APIRouter(prefix="/sites", tags=["sites"])
 
 operator_or_admin = require_roles("operator", "esg_admin")
+site_scoped_operator = require_site_role("operator", "esg_admin")
 
 
-@router.get("", response_model=List[SiteSummary])
+@router.get("", response_model=list[SiteSummary])
 async def list_sites(
-    _=Depends(operator_or_admin),
+    user: Annotated[User, Depends(operator_or_admin)],
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ):
-    rows = (await db.execute(select(Site))).scalars().all()
+    ids = await allowed_site_ids(db, user)
+    if not ids:
+        return []
+    rows = (await db.execute(select(Site).where(Site.id.in_(ids)))).scalars().all()
     return [
         SiteSummary(
             id=s.id,
@@ -36,7 +42,7 @@ async def list_sites(
 @router.get("/{site_id}", response_model=SiteOut)
 async def get_site(
     site_id: str,
-    _=Depends(operator_or_admin),
+    _=Depends(site_scoped_operator),
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ):
     site = (
@@ -69,10 +75,10 @@ async def get_site(
     )
 
 
-@router.get("/{site_id}/nodes", response_model=List[SensorNodeOut])
+@router.get("/{site_id}/nodes", response_model=list[SensorNodeOut])
 async def list_nodes(
     site_id: str,
-    _=Depends(operator_or_admin),
+    _=Depends(site_scoped_operator),
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ):
     rows = (
@@ -85,7 +91,7 @@ async def list_nodes(
 async def get_node(
     site_id: str,
     node_id: str,
-    _=Depends(operator_or_admin),
+    _=Depends(site_scoped_operator),
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ):
     node = (
@@ -98,10 +104,10 @@ async def get_node(
     return SensorNodeOut.model_validate(node)
 
 
-@router.get("/{site_id}/slopes", response_model=List[MineSlopeOut])
+@router.get("/{site_id}/slopes", response_model=list[MineSlopeOut])
 async def list_slopes(
     site_id: str,
-    _=Depends(operator_or_admin),
+    _=Depends(site_scoped_operator),
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ):
     rows = (

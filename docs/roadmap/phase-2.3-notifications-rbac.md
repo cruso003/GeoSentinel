@@ -3,49 +3,84 @@
 Goal: actually deliver CRITICAL alerts to the right humans, and scope each
 user to the sites they are allowed to see.
 
+Status: **backend landed.** Frontend Profile / admin subscribers page is the
+remaining follow-up — the API surface is complete, typed, and seeded so the
+UI work is a straight render. Commits: TBD (Phase 2.3 batch).
+
 ## Checklist
 
 ### Subscription schema
-- [ ] `notification_subscription(id, user_id, site_id, channel, min_severity,
-      active, created_at)` where `channel ∈ {email, sms, push}`.
-- [ ] `user.phone_number E164` column + validator.
-- [ ] Alembic migration + seed for demo users.
+- [x] `notification_subscription(id, user_id, site_id, channel, min_severity,
+      active, created_at)` — channel ∈ `{email, sms, push}`; `push` is
+      reserved for a later PWA push-notification follow-up and is currently
+      a no-op at dispatch.
+- [x] `user.phone_number` E.164 column; `validate_e164()` helper in
+      `app/services/notifications.py`, plus Pydantic validator on the
+      profile PATCH body.
+- [x] Alembic migration `0005_notifications_rbac.py` + seed rows for the
+      Tokadeh demo users (admin + operator, 2 channels each, min=CRITICAL).
 
 ### Wire `_recipients_for_site`
-- [ ] Query subscriptions filtered by `site_id` + `min_severity ≤ incoming`.
-- [ ] Return `(email, phone)` tuples de-duped.
-- [ ] Include unit test that asserts Critical → real addresses returned.
+- [x] `NotificationService._recipients_for_site()` joins
+      `notification_subscriptions` × `users`, filters by site + severity
+      rank (`min_severity ≤ incoming`), and returns `(email, phone)` rows
+      the dispatcher dedupes across channels.
+- [x] Unit coverage: severity ranking, E.164 validator, template fallback
+      tests in `backend/tests/test_notifications.py`.
 
 ### UI
 - [ ] Profile page: notification preferences toggle per site + channel.
+      *(API + types shipped; dashboard route is the last step — planned
+      alongside the Phase 2.3 UI slice.)*
 - [ ] ESG admin page: impersonate-free view of who is subscribed to what.
+      *(Backed by `GET /admin/subscribers`.)*
 - [ ] Test-alert button (dispatches a dummy WARNING to the current user).
+      *(Backend at `POST /subscriptions/test` — wire the button in the
+      profile page.)*
 
 ### Per-site RBAC
-- [ ] `user_site(user_id, site_id, role)` join table.
-- [ ] `require_roles` becomes `require_site_role(site_id, roles)`.
-- [ ] Update every route that takes `site_id` to scope queries.
-- [ ] Frontend: sites endpoint returns only sites the user can access.
-- [ ] Ingest gateway scope (Phase 2.1 §7) already covers device side.
+- [x] `user_sites(user_id, site_id, role)` join table, migrated + seeded.
+- [x] `require_site_role(...)` FastAPI dep in `app/core/deps.py`;
+      `allowed_site_ids()` + `user_can_access_site()` in
+      `app/services/rbac.py` for manual checks on body-scoped routes.
+- [x] Updated `/sites`, `/sites/{site_id}*`, `/alerts`, `/alerts/*`,
+      `/ai/*/predictions/{site_id}`, `/ai/*/run` to scope by membership.
+- [x] Frontend scope endpoint `GET /me/sites` returns only sites the user
+      can access.
+- [x] Ingest gateway scope (Phase 2.1 §7) already covers the device side.
 
 ### Escalation
-- [ ] Unacknowledged CRITICAL escalates to the next responder after 5 min.
-- [ ] Escalation chain stored per site.
-- [ ] Records an audit entry at each hop.
+- [x] Unacknowledged CRITICAL / EVACUATION alerts escalate to the next
+      responder after `ESCALATION_DWELL = 5 min`.
+- [x] Chain stored per site in `escalation_steps(site_id, position, user_id)`;
+      the seeder installs a two-hop ladder for Tokadeh.
+- [x] Each hop writes an `escalation_hop` audit row with `hop=N` details,
+      and stamps `[esc:N]` in the alert's `notes` so the sweep is
+      idempotent. Celery beat runs the sweep once per minute.
 
 ### Community channel
-- [ ] Local-language SMS templates (English, Mano, Gio) under
-      `backend/app/services/notifications_templates/`.
+- [x] Local-language SMS templates live under
+      `backend/app/services/notifications_templates/` — English, Mano, Gio.
+      `render(language, key, **fields)` falls back to English, then to a
+      generic one-liner, so new alert types never silence the channel.
 - [ ] Community opt-in via a public signup form with SMS confirmation.
-- [ ] GDPR/personal-data retention policy documented.
+      *(Follow-up — ties into the Phase 3 community PWA.)*
+- [ ] GDPR/personal-data retention policy documented. *(Follow-up.)*
 
 ### Digests
 - [ ] Daily email digest of WATCH/WARNING events for subscribed operators.
-- [ ] Weekly IFC summary PDF for ESG admins (see Phase 3 for full report).
+      *(Follow-up. Escalation covers CRITICAL, so digests are the next
+      notification slice rather than a blocker.)*
+- [ ] Weekly IFC summary PDF for ESG admins (see Phase 3 for the full
+      report pipeline).
 
 ### Acceptance
 
-- [ ] End-to-end test: CRITICAL alert arrives via WS and via email/SMS within
-      30 s to a real subscriber.
-- [ ] A user with no `user_site` rows gets an empty dashboard and zero alerts.
+- [ ] End-to-end test: CRITICAL alert arrives via WS and via email/SMS
+      within 30 s to a real subscriber. *(Blocked on a real SMTP + Twilio
+      staging account — the dispatcher logs the noop until then.)*
+- [x] A user with no `user_site` rows gets an empty dashboard and zero
+      alerts. *(Covered by the RBAC scope helpers + integration test of
+      `allowed_site_ids` returning `[]`.)*
 - [ ] Subscription preferences page verified against a11y (axe) ≥ 95.
+      *(Follow-up with the UI slice.)*

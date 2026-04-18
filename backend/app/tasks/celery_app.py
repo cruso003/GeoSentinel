@@ -22,6 +22,7 @@ celery_app = Celery(
         "app.tasks.ai_inference",
         "app.tasks.report_generation",
         "app.tasks.insar_processing",
+        "app.tasks.escalation",
     ],
 )
 
@@ -44,6 +45,7 @@ celery_app.conf.update(
         "app.tasks.insar_processing.*": {"queue": "ml"},
         # Everything else on the default queue.
         "app.tasks.report_generation.*": {"queue": "default"},
+        "app.tasks.escalation.*": {"queue": "default"},
     },
     beat_schedule={
         "enviroguard-15min": {
@@ -60,6 +62,11 @@ celery_app.conf.update(
             "task": "app.tasks.insar_processing.process_sentinel1_scene",
             "schedule": crontab(hour=3, minute=0, day_of_week=0),
             "options": {"queue": "ml"},
+        },
+        "escalation-sweep-1min": {
+            "task": "app.tasks.escalation.sweep_unacknowledged",
+            "schedule": 60,
+            "options": {"queue": "default", "expires": 50},
         },
     },
 )
