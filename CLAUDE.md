@@ -66,7 +66,7 @@ The dashboard has two modes switched by `useUIStore.mockMode`:
 
 ### Backend service wiring
 
-`app/main.py` `lifespan` connects `influx` (falls back to in-memory ring buffer per `(measurement, node_id)` keyed `deque`(maxlen=20 000) if InfluxDB unreachable) and starts `mqtt_client` (no-op if `paho-mqtt` or broker unavailable). WebSocket endpoint `/ws/{site_id}` registers the socket with `hub` (`app/services/ws_hub.py`) which broadcasts 5 message types: `SENSOR_UPDATE`, `ALERT_NEW`, `ALERT_ACKNOWLEDGED`, `AI_PREDICTION`, `NODE_STATUS`.
+`app/main.py` `lifespan` connects `influx` (falls back to in-memory ring buffer per `(measurement, node_id)` keyed `deque`(maxlen=20 000) if InfluxDB unreachable) and starts `mqtt_client` (no-op if `paho-mqtt` or broker unavailable). WebSocket endpoint `/ws/{site_id}` registers the socket with `hub` (`app/services/ws_hub.py`) which broadcasts 4 message types: `SENSOR_UPDATE`, `ALERT_NEW`, `ALERT_ACKNOWLEDGED`, `AI_PREDICTION`. `NODE_STATUS` is in the schema but not yet emitted (needs a `last_seen` sweep from MQTT + alert integration — see `docs/roadmap/functional-gaps.md`).
 
 All v1 routes live under `app/api/v1/` and are aggregated by `app/api/v1/__init__.py` → `api_router` mounted at `/api/v1`. `require_roles("operator", "esg_admin")` is the standard guard; the community dashboard is intentionally unauthenticated (Spec §5.2.7). The gateway ingest endpoint (`POST /sensors/ingest`) is authenticated with a static `X-Gateway-API-Key` header (`settings.mqtt_gateway_api_key`).
 

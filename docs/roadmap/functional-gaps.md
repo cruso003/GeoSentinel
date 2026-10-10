@@ -40,6 +40,11 @@ doesn't actually work yet".
       alongside the relevant phase.
 - [ ] **WS hub broadcasts serially.** One slow client stalls every other
       subscriber. → Phase 2.2.
+- [ ] **`NODE_STATUS` WS message not emitted.** Documented in the schema
+      and typed on the frontend union, but no backend path ever calls
+      `hub.broadcast(..., {"type": "NODE_STATUS", ...})`. Needs an MQTT
+      `last_seen` sweep that compares against `SensorNode.last_seen` and
+      fires on ONLINE/OFFLINE/DEGRADED transitions.
 - [ ] **Celery `--beat` embedded in the worker.** Scaling workers
       duplicates schedules. → Phase 2.2.
 - [ ] **Frontend bundle has no code splitting.** Three.js + Leaflet load on
