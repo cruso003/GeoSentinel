@@ -1,8 +1,11 @@
 """IFC / WHO compliance thresholds — backend source of truth (Spec §4.2).
 
-Mirrors `frontend/src/utils/ifc-thresholds.ts`. Keep these two files in sync;
-if you change one, change the other. The `near_limit` band is 20% of the span
-(or 20% below the max for one-sided limits).
+Mirrors ``frontend/src/utils/ifc-thresholds.ts``. The two files must agree
+on every shared parameter — the parity test in
+``backend/tests/test_thresholds_parity.py`` reads the frontend file at
+test time and asserts match. Pending extraction to a shared JSON file
+(``docs/roadmap/functional-gaps.md``). The ``near_limit`` band is 20 %
+of the span (or 20 % below the max for one-sided limits).
 """
 
 from __future__ import annotations
@@ -20,16 +23,23 @@ class Threshold:
     severity_on_breach: Literal["INFO", "WARNING", "CRITICAL"]
 
 
+# Air-quality limits (SO2, NO2) are µg/m³, the WHO / IFC canonical form.
+# ``noise_db`` uses the IFC EHS 70 dB(A) daytime residential limit — the
+# frontend was already there; backend reconciled down from 75 dB (which
+# is the industrial/commercial limit, not community-adjacent).
+# ``dissolved_oxygen`` reconciled up to 6.0 mg/L (WHO drinking-water
+# protective floor) to match the frontend.
 IFC_THRESHOLDS: dict[str, Threshold] = {
     "ph": Threshold("ph", "pH", 6.0, 9.0, "WARNING"),
     "turbidity": Threshold("turbidity", "NTU", None, 5.0, "WARNING"),
-    "dissolved_oxygen": Threshold("dissolved_oxygen", "mg/L", 5.0, None, "WARNING"),
+    "dissolved_oxygen": Threshold("dissolved_oxygen", "mg/L", 6.0, None, "WARNING"),
     "conductivity": Threshold("conductivity", "uS/cm", None, 500.0, "WARNING"),
     "pm25": Threshold("pm25", "ug/m3", None, 25.0, "WARNING"),
     "pm10": Threshold("pm10", "ug/m3", None, 50.0, "WARNING"),
     "so2": Threshold("so2", "ug/m3", None, 40.0, "INFO"),
     "no2": Threshold("no2", "ug/m3", None, 40.0, "INFO"),
-    "noise_db": Threshold("noise_db", "dB", None, 75.0, "INFO"),
+    "noise_db": Threshold("noise_db", "dB", None, 70.0, "INFO"),
+    # Geotech-only — not surfaced in the frontend threshold check (yet).
     "tilt_x": Threshold("tilt_x", "deg", -0.5, 0.5, "CRITICAL"),
     "tilt_y": Threshold("tilt_y", "deg", -0.5, 0.5, "CRITICAL"),
     "crack_displacement": Threshold("crack_displacement", "mm", None, 3.0, "CRITICAL"),

@@ -1,6 +1,15 @@
 // IFC EHS Guideline thresholds (Spec Section 4.2)
 // Reference: IFC General EHS Guidelines, Mining Sector Guidelines.
-
+//
+// Values here MUST stay aligned with ``backend/app/services/thresholds.py``.
+// A backend parity test (``test_thresholds_parity.py``) will fail CI if
+// either file is edited without the other.  Pending extraction to a
+// shared JSON file (see ``docs/roadmap/functional-gaps.md``).
+//
+// Unit convention: µg/m³ for SO₂ and NO₂ (WHO / IFC canonical form).
+// The frontend previously used ppm for both, which drifted ~87× from
+// the backend's µg/m³ check — reconciled here so a single reading
+// cannot be "safe" on one side and "exceedance" on the other.
 export const IFC_THRESHOLDS = {
   ph: { min: 6.0, max: 9.0, unit: 'SU' },
   turbidity: { max: 5, unit: 'NTU' },
@@ -8,8 +17,8 @@ export const IFC_THRESHOLDS = {
   conductivity: { max: 500, unit: 'uS/cm' },
   pm25: { max: 25, unit: 'ug/m3' },
   pm10: { max: 50, unit: 'ug/m3' },
-  so2: { max: 0.5, unit: 'ppm' },
-  no2: { max: 0.2, unit: 'ppm' },
+  so2: { max: 40, unit: 'ug/m3' },
+  no2: { max: 40, unit: 'ug/m3' },
   noise_db: { max: 70, unit: 'dB' },
 } as const;
 
