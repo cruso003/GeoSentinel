@@ -44,30 +44,48 @@ export function ComplianceTab() {
         ))}
       </div>
 
-      <Card title="Compliance Timeline" subtitle="Stacked compliance % vs IFC limits">
-        <ResponsiveContainer width="100%" height={280}>
-          <AreaChart data={compliance} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke={light ? '#E2E8F0' : '#1F3A5F'} />
-            <XAxis
-              dataKey="t"
-              fontSize={11}
-              stroke={light ? '#475569' : '#64748B'}
-              tickFormatter={(v) => format(parseISO(v as string), 'MMM d')}
-              minTickGap={32}
-            />
-            <YAxis
-              fontSize={11}
-              stroke={light ? '#475569' : '#64748B'}
-              domain={[80, 100]}
-              tickFormatter={(v) => `${v}%`}
-            />
-            <Tooltip />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
-            <Area type="monotone" dataKey="water" stackId="1" stroke="#22D3EE" fill="#22D3EE" fillOpacity={0.4} />
-            <Area type="monotone" dataKey="air" stackId="2" stroke="#A78BFA" fill="#A78BFA" fillOpacity={0.4} />
-            <Area type="monotone" dataKey="geo" stackId="3" stroke="#34D399" fill="#34D399" fillOpacity={0.4} />
-          </AreaChart>
-        </ResponsiveContainer>
+      <Card
+        title="Compliance Timeline"
+        subtitle={
+          compliance.length > 0
+            ? 'Hourly compliance share from the last 24 h of ingested readings'
+            : 'Awaiting readings — hourly compliance renders once history is ingested'
+        }
+      >
+        {compliance.length === 0 ? (
+          <div
+            className={clsx(
+              'flex h-[280px] items-center justify-center rounded-md border border-dashed text-xs',
+              light ? 'border-slate-300 text-slate-500' : 'border-bg-line text-slate-500',
+            )}
+          >
+            No ingested readings yet. Start the data engine or connect a sensor
+            gateway — the chart hydrates per hourly bucket.
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={280}>
+            <AreaChart data={compliance} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={light ? '#E2E8F0' : '#1F3A5F'} />
+              <XAxis
+                dataKey="t"
+                fontSize={11}
+                stroke={light ? '#475569' : '#64748B'}
+                tickFormatter={(v) => format(parseISO(v as string), 'HH:mm')}
+                minTickGap={32}
+              />
+              <YAxis
+                fontSize={11}
+                stroke={light ? '#475569' : '#64748B'}
+                domain={[0, 100]}
+                tickFormatter={(v) => `${v}%`}
+              />
+              <Tooltip />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Area type="monotone" dataKey="water" stroke="#22D3EE" fill="#22D3EE" fillOpacity={0.3} />
+              <Area type="monotone" dataKey="air" stroke="#A78BFA" fill="#A78BFA" fillOpacity={0.3} />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
       </Card>
 
       <ReportPanel light={light} />
@@ -141,11 +159,12 @@ function ReportPanel({ light }: { light: boolean }) {
         status: 'ready',
         download_url: null,
         generated_at: new Date().toISOString(),
+        // Mock mode shows the UI handoff without faking cryptographic
+        // artifacts — the Signed pill only renders when the backend
+        // returns a real signature + pubkey from the live /generate call.
         data_integrity_hash: hex(64),
-        // Deterministic-looking Ed25519 shapes so the Signed badge renders
-        // under the walkthrough without calling the backend.
-        signature_b64: btoa(hex(64)).slice(0, 88),
-        signing_pubkey_hex: hex(64),
+        signature_b64: null,
+        signing_pubkey_hex: null,
       });
       setStatus('ready');
       return;
@@ -282,15 +301,22 @@ function SignedBadge({ pubkeyHex, light }: { pubkeyHex: string; light: boolean }
 }
 
 function AuditLogTable({ light }: { light: boolean }) {
+  // The live audit log is a hash-chained Postgres table written by every
+  // mutating API call (see backend/app/services/audit.py). It is not yet
+  // surfaced to the frontend; this card previews the shape of events a
+  // reviewer will see once the server-side listing endpoint ships.
   const rows = [
-    { ts: '2026-04-16 09:12', kind: 'AI Inference', actor: 'system', detail: 'EnviroGuard run · confidence 0.86' },
-    { ts: '2026-04-16 08:00', kind: 'Calibration', actor: 'op-jane', detail: 'ENV-01 pH probe re-calibrated' },
-    { ts: '2026-04-15 22:45', kind: 'Alert Ack', actor: 'op-james', detail: 'Conductivity warning ENV-02 acknowledged' },
-    { ts: '2026-04-15 14:11', kind: 'Data Ingest', actor: 'gateway', detail: '14,322 readings stored to InfluxDB' },
-    { ts: '2026-04-14 06:00', kind: 'Report', actor: 'esg-admin', detail: 'IFC report generated for March' },
+    { ts: '— ', kind: 'AI Inference', actor: 'system', detail: 'EnviroGuard run · hash-chained' },
+    { ts: '— ', kind: 'Alert Ack', actor: 'operator@site', detail: 'Conductivity warning acknowledged' },
+    { ts: '— ', kind: 'Data Ingest', actor: 'gateway', detail: 'Reading batch written + checksummed' },
+    { ts: '— ', kind: 'Report', actor: 'esg_admin', detail: 'IFC PDF generated + Ed25519-signed' },
   ];
   return (
-    <Card title="Audit Log" subtitle="Compliance-relevant system events" actions={<button className="gs-button text-xs">Export CSV</button>}>
+    <Card
+      title="Audit Log — Example Events"
+      subtitle="Shape preview; live hash-chained log reads over a dedicated endpoint (coming)"
+      actions={<button className="gs-button text-xs" disabled title="Pending live-feed endpoint">Export CSV</button>}
+    >
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className={clsx('text-left text-xs uppercase tracking-wider', light ? 'text-slate-500' : 'text-slate-500')}>
@@ -303,11 +329,11 @@ function AuditLogTable({ light }: { light: boolean }) {
           </thead>
           <tbody>
             {rows.map((r, i) => (
-              <tr key={i} className={clsx('border-t', light ? 'border-slate-200' : 'border-bg-line')}>
+              <tr key={i} className={clsx('border-t opacity-60', light ? 'border-slate-200' : 'border-bg-line')}>
                 <td className="py-1.5 pr-3 font-mono text-xs">{r.ts}</td>
                 <td className="py-1.5 pr-3">{r.kind}</td>
-                <td className="py-1.5 pr-3 opacity-70">{r.actor}</td>
-                <td className="py-1.5 pr-3 opacity-70">{r.detail}</td>
+                <td className="py-1.5 pr-3">{r.actor}</td>
+                <td className="py-1.5 pr-3">{r.detail}</td>
               </tr>
             ))}
           </tbody>
@@ -317,37 +343,128 @@ function AuditLogTable({ light }: { light: boolean }) {
   );
 }
 
-function buildComplianceTrend(_env: ReturnType<typeof useSensorStore.getState>['envHistory']) {
-  const out: { t: string; water: number; air: number; geo: number }[] = [];
-  const now = new Date();
-  for (let i = 29; i >= 0; i--) {
-    const d = subDays(now, i);
-    out.push({
-      t: d.toISOString(),
-      water: 31 + Math.random() * 1.5,
-      air: 33 + Math.random() * 1.2,
-      geo: 32 + Math.random(),
-    });
+type EnvHistory = ReturnType<typeof useSensorStore.getState>['envHistory'];
+type EnvReading = EnvHistory[string][number];
+
+const WATER_PARAMS = ['ph', 'turbidity', 'dissolved_oxygen', 'conductivity'] as const;
+const AIR_PARAMS = ['pm25', 'pm10', 'so2', 'no2'] as const;
+
+/** Fraction of (reading × tracked parameter) checks that are compliant. */
+function compliantShare(readings: EnvReading[], params: readonly (keyof EnvReading)[]): number {
+  if (readings.length === 0) return 0;
+  let total = 0;
+  let ok = 0;
+  for (const r of readings) {
+    for (const p of params) {
+      const v = r[p];
+      if (typeof v !== 'number' || Number.isNaN(v)) continue;
+      total += 1;
+      if (checkCompliance(p as never, v).compliant) ok += 1;
+    }
   }
-  return out;
+  return total === 0 ? 0 : ok / total;
 }
 
-function buildScoreCards(env: ReturnType<typeof useSensorStore.getState>['envHistory']): ScoreCard[] {
-  const allEnv01 = env['ENV-01'] ?? [];
-  const phCompliant = allEnv01.length
-    ? allEnv01.filter((r) => checkCompliance('ph', r.ph).compliant).length / allEnv01.length
-    : 1;
+/** Group readings into hourly buckets keyed by the bucket start timestamp. */
+function bucketByHour(readings: EnvReading[], hours: number): Map<string, EnvReading[]> {
+  const buckets = new Map<string, EnvReading[]>();
+  const now = Date.now();
+  const windowStart = now - hours * 3600_000;
+  for (const r of readings) {
+    const t = Date.parse(r.timestamp);
+    if (Number.isNaN(t) || t < windowStart) continue;
+    const bucketStart = new Date(t);
+    bucketStart.setMinutes(0, 0, 0);
+    const key = bucketStart.toISOString();
+    const bucket = buckets.get(key);
+    if (bucket) bucket.push(r);
+    else buckets.set(key, [r]);
+  }
+  return buckets;
+}
+
+/** Rolling 24-h hourly compliance timeline, computed from the ingested
+ * env history. Returns an empty array when there are no readings — the
+ * caller renders an "awaiting data" state in that case. */
+function buildComplianceTrend(env: EnvHistory): { t: string; water: number; air: number }[] {
+  const allReadings: EnvReading[] = Object.values(env).flat();
+  if (allReadings.length === 0) return [];
+
+  const buckets = bucketByHour(allReadings, 24);
+  if (buckets.size === 0) return [];
+
+  const keys = Array.from(buckets.keys()).sort();
+  return keys.map((key) => {
+    const bucket = buckets.get(key) ?? [];
+    return {
+      t: key,
+      water: Number((compliantShare(bucket, WATER_PARAMS) * 100).toFixed(1)),
+      air: Number((compliantShare(bucket, AIR_PARAMS) * 100).toFixed(1)),
+    };
+  });
+}
+
+/** Score cards computed from the actual env history. Returns a card
+ * flagged ``awaiting_data`` when no readings exist, so the UI can render
+ * a muted state instead of a confidently wrong number. */
+function buildScoreCards(env: EnvHistory): ScoreCard[] {
+  const allReadings: EnvReading[] = Object.values(env).flat();
+
+  const now = Date.now();
+  const windowReadings = allReadings.filter((r) => {
+    const t = Date.parse(r.timestamp);
+    return !Number.isNaN(t) && t >= now - 24 * 3600_000;
+  });
+  const priorReadings = allReadings.filter((r) => {
+    const t = Date.parse(r.timestamp);
+    return !Number.isNaN(t) && t >= now - 48 * 3600_000 && t < now - 24 * 3600_000;
+  });
+
+  const nodeCount = Object.keys(env).length;
+  const activeNodeCount = Object.values(env).filter((rs) => {
+    const last = rs[rs.length - 1];
+    if (!last) return false;
+    const t = Date.parse(last.timestamp);
+    return !Number.isNaN(t) && t >= now - 2 * 3600_000;
+  }).length;
+
+  const waterNow = compliantShare(windowReadings, WATER_PARAMS);
+  const waterPrev = compliantShare(priorReadings, WATER_PARAMS);
+  const airNow = compliantShare(windowReadings, AIR_PARAMS);
+  const airPrev = compliantShare(priorReadings, AIR_PARAMS);
+
+  const pct = (v: number) => `${(v * 100).toFixed(1)}`;
+  const diffPp = (a: number, b: number) => Number(((a - b) * 100).toFixed(1));
+
+  const hasWindowData = windowReadings.length > 0;
+  const hasPriorData = priorReadings.length > 0;
+
   return [
     {
-      label: 'Water Compliance',
-      value: `${(phCompliant * 100).toFixed(1)}`,
-      unit: '%',
-      delta: 0.4,
-      trend: [0.6, 0.7, 0.65, 0.8, 0.85, 0.9, 0.95],
+      label: 'Water Compliance (24h)',
+      value: hasWindowData ? pct(waterNow) : '—',
+      unit: hasWindowData ? '%' : undefined,
+      delta: hasPriorData ? diffPp(waterNow, waterPrev) : 0,
+      trend: [],
     },
-    { label: 'Air Compliance', value: '98.2', unit: '%', delta: 0.2, trend: [0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9] },
-    { label: 'Geohazard Risk', value: 'LOW', delta: -1, trend: [0.5, 0.45, 0.4, 0.42, 0.38, 0.36, 0.35] },
-    { label: 'Node Uptime', value: '99.4', unit: '%', delta: 0.1, trend: [0.85, 0.88, 0.9, 0.92, 0.95, 0.97, 0.99] },
-    { label: 'Avg Response', value: '12', unit: 'min', delta: -2, trend: [0.5, 0.52, 0.5, 0.48, 0.45, 0.42, 0.4] },
+    {
+      label: 'Air Compliance (24h)',
+      value: hasWindowData ? pct(airNow) : '—',
+      unit: hasWindowData ? '%' : undefined,
+      delta: hasPriorData ? diffPp(airNow, airPrev) : 0,
+      trend: [],
+    },
+    {
+      label: 'Env Readings (24h)',
+      value: String(windowReadings.length),
+      delta: hasPriorData ? windowReadings.length - priorReadings.length : 0,
+      trend: [],
+    },
+    {
+      label: 'Nodes Reporting',
+      value: `${activeNodeCount}/${nodeCount || 0}`,
+      delta: 0,
+      trend: [],
+    },
   ];
 }
