@@ -106,7 +106,7 @@ export function GeotechnicalTab() {
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card title={slope.name} subtitle="SlopeWatch (PINN) risk score">
+        <Card title={slope.name} subtitle="SlopeWatch risk score">
           <div className="flex flex-col items-center justify-center py-2">
             <RiskRing score={pred?.risk_score ?? 0} />
             <Pill tone={TIER_TONE[tier]} className="mt-3">
@@ -118,7 +118,11 @@ export function GeotechnicalTab() {
             </div>
           </div>
         </Card>
-        <Card title="Factor Breakdown" subtitle="Why this risk score?" className="lg:col-span-2">
+        <Card
+          title="Factor Breakdown"
+          subtitle="Illustrative driver weighting"
+          className="lg:col-span-2"
+        >
           <div className="space-y-2">
             <FactorBar label="Pore Water Pressure" value={pred?.pore_pressure_factor ?? 0} />
             <FactorBar label="Tilt Accumulation" value={pred?.tilt_factor ?? 0} />
@@ -126,8 +130,10 @@ export function GeotechnicalTab() {
             <FactorBar label="Rainfall Intensity" value={pred?.rainfall_factor ?? 0} />
           </div>
           <p className="mt-3 text-[11px] text-slate-500">
-            Physics constraint: Mohr-Coulomb factor of safety informs final risk score. FS &lt; 1.0
-            forces risk &gt; 0.9.
+            Illustrative weighting of the dominant drivers for operator intuition — not a
+            SHAP-grade attribution. Risk score itself is produced by Bishop's simplified
+            Mohr-Coulomb factor of safety (service-time fallback) or the sequence model
+            when one is loaded.
           </p>
         </Card>
       </div>

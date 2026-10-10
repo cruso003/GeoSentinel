@@ -140,9 +140,12 @@ export function CommunityView() {
 
         <footer className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm">
           <h3 className="text-sm font-semibold text-slate-900">Contact & report concerns</h3>
+          <p className="mt-2 text-xs text-slate-600">
+            Operator and regulator hotlines for this site are configured per deployment. In
+            a production rollout, the mine operator's community-grievance line and the
+            relevant regulator (EPA Liberia, Nimba field office) are published here.
+          </p>
           <ul className="mt-2 space-y-1">
-            <li>ArcelorMittal Liberia Environmental Hotline: <strong>+231-77-000-0000</strong></li>
-            <li>EPA Liberia (Nimba field office): <strong>+231-77-000-1111</strong></li>
             <li>GeoSentinel report submission: <strong>report@geosentinel.app</strong></li>
           </ul>
         </footer>

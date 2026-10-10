@@ -79,7 +79,7 @@ function NodeDetailPanel({ node, onClose }: { node: SensorNode; onClose: () => v
       <div className="mb-4 flex items-start justify-between">
         <div>
           <h3 className="text-base font-semibold text-white">{node.name}</h3>
-          <p className="text-xs text-slate-400">{node.id} · firmware v0.9.4</p>
+          <p className="text-xs text-slate-400">{node.id}</p>
         </div>
         <button type="button" onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-bg-line hover:text-white">
           <X className="h-4 w-4" />
@@ -97,8 +97,8 @@ function NodeDetailPanel({ node, onClose }: { node: SensorNode; onClose: () => v
         Trigger Calibration Procedure
       </button>
       <p className="mt-3 text-[11px] text-slate-500">
-        Calibration history, voltage trend chart, and OTA controls will appear here once
-        Phase-2 telemetry is connected.
+        Calibration history, voltage trend charts, and OTA firmware controls surface
+        here when the node reports back over MQTT.
       </p>
     </div>
   );
