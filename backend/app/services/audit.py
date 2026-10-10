@@ -4,6 +4,14 @@ Each row's `row_hash` is ``sha256(prev_hash || canonical_json(payload))``.
 The canonical payload is a sorted-key JSON dump of the row's own fields,
 excluding the hash columns themselves. `verify_chain()` recomputes the
 chain and returns the first break.
+
+Concurrency: on Postgres, ``record()`` takes a transaction-scoped
+advisory lock before reading ``_latest_hash`` so two concurrent writers
+cannot both compute their row from the same ``prev``.  Without the lock
+the second committed row would carry a stale ``prev_hash`` and
+``verify_chain`` would falsely cry tamper on the next audit sweep.  On
+SQLite (test runs) the lock is a no-op — SQLite serialises writers at
+the file level, so no race.
 """
 
 from __future__ import annotations
@@ -13,11 +21,16 @@ import json
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.audit import AuditLog
 from ..models.user import User
+
+# Stable 64-bit integer derived from the ``audit_log`` table name — any
+# process that participates in the chain picks the same lock. The exact
+# value is immaterial as long as it is constant.
+_ADVISORY_LOCK_KEY = 0x6175_6469_745F_6C6F  # 'auditlo' as hex ascii
 
 
 def _canonical(row: AuditLog) -> bytes:
@@ -52,6 +65,23 @@ async def _latest_hash(db: AsyncSession) -> str:
     return row.row_hash if row and row.row_hash else ""
 
 
+async def _acquire_chain_lock(db: AsyncSession) -> None:
+    """Serialise concurrent writers against the hash chain.
+
+    On Postgres a transaction-scoped ``pg_advisory_xact_lock`` holds the
+    lock until commit/rollback, so a flush + commit cycle around
+    ``record()`` sees a consistent ``prev``. The lock is released by the
+    DB when the transaction ends — no explicit unlock here.
+    """
+
+    dialect = db.bind.dialect.name if db.bind is not None else ""
+    if dialect == "postgresql":
+        await db.execute(
+            text("SELECT pg_advisory_xact_lock(:k)"),
+            {"k": _ADVISORY_LOCK_KEY},
+        )
+
+
 async def record(
     db: AsyncSession,
     *,
@@ -74,6 +104,10 @@ async def record(
         details=details,
         created_at=datetime.now(timezone.utc),
     )
+    # Advisory lock must be taken BEFORE reading _latest_hash — otherwise
+    # two concurrent writers can both read the same prev before either
+    # commits, producing a chain that verify_chain reports as broken.
+    await _acquire_chain_lock(db)
     prev = await _latest_hash(db)
     entry.prev_hash = prev or None
     entry.row_hash = _hash_row(prev, entry)
