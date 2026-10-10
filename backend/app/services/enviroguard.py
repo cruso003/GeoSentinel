@@ -3,7 +3,14 @@
 Phase 2: if a trained TFLite artifact is available under
 `$GEOSENTINEL_MODEL_DIR/enviroguard/artifacts/`, load it once and run
 inference on the last 96 h of InfluxDB data. Otherwise fall back to the
-deterministic Phase-1 stub so the demo still works in a clean checkout.
+deterministic Phase-1 surrogate so the demo still works in a clean
+checkout.
+
+The surrogate is gated behind ``settings.enable_synthetic_ai_fallback``:
+True in dev (default) → hour-of-day drift renders in the dashboard, no
+operator decision is at stake. False in prod (validator-enforced) → the
+service returns a sentinel LOW/0-confidence prediction so no synthetic
+number ever reaches a real operator.
 """
 
 from __future__ import annotations
@@ -15,6 +22,7 @@ from typing import Literal, Optional
 
 import numpy as np
 
+from ..core.config import get_settings
 from ..schemas.ai import EnviroGuardPredictionOut
 from . import tflite_runtime
 from .influx import influx
@@ -85,8 +93,25 @@ async def run_enviroguard(site_id: str) -> EnviroGuardPredictionOut:
             probs = out[0].tolist()
             return _build_prediction(site_id, now, probs, confidence=0.87)
 
-    # Fallback — deterministic-ish drift by hour-of-day so the dashboard is
-    # not flat when there is no telemetry and no TFLite model.
+    if not get_settings().enable_synthetic_ai_fallback:
+        # Prod path when no trained artifact is loaded and no telemetry is
+        # yet flowing. Return a sentinel LOW/0.0-confidence row so callers
+        # can tell there is no prediction — do NOT fabricate one.
+        log.warning(
+            "enviroguard: no inference available (seq_ready=%s); synthetic "
+            "fallback disabled, returning sentinel LOW/0.0 prediction",
+            seq is not None,
+        )
+        return _build_prediction(site_id, now, [0.0] * 7, confidence=0.0)
+
+    # Dev/demo surrogate — deterministic-ish drift by hour-of-day so the
+    # dashboard is not flat when there is no telemetry and no TFLite model.
+    # Not a prediction; see the module docstring. Enabled only when the
+    # settings flag is True (dev default; prod validator-forbidden).
+    log.info(
+        "enviroguard: no trained model available, serving hour-of-day surrogate "
+        "(enable_synthetic_ai_fallback=True)",
+    )
     h = now.hour + now.minute / 60
     base = 0.05 + 0.08 * (math.sin(h / 24 * 2 * math.pi) * 0.5 + 0.5)
     probs = [
@@ -98,7 +123,7 @@ async def run_enviroguard(site_id: str) -> EnviroGuardPredictionOut:
         min(0.97, base + 0.05),     # ph 72h
         min(0.97, base + 0.08),     # turbidity 72h
     ]
-    return _build_prediction(site_id, now, probs, confidence=0.82)
+    return _build_prediction(site_id, now, probs, confidence=0.5)
 
 
 def _build_prediction(

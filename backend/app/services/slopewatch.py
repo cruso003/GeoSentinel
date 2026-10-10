@@ -1,8 +1,14 @@
-"""SlopeWatch PINN inference service.
+"""SlopeWatch inference service.
 
-Phase 2: loads the trained TFLite PINN and runs it on the last 72 h of geo
-telemetry per slope. Phase 1 fallback: blends Mohr-Coulomb FoS with a
-deterministic stability baseline.
+Phase 2: loads a trained TFLite sequence model and runs it on the last
+72 h of geo telemetry per slope. Phase 1 fallback: Bishop's simplified
+Mohr-Coulomb factor-of-safety with constant soil parameters.
+
+The Phase-1 surrogate is gated behind ``settings.enable_synthetic_ai_fallback``:
+True in dev (default) → the Bishop FoS kernel runs on representative
+slice geometry so the dashboard is not blank. False in prod (validator-
+enforced) → the service returns a sentinel NORMAL/0.0-confidence
+prediction so no synthetic risk score ever reaches a real operator.
 """
 
 from __future__ import annotations
@@ -14,6 +20,7 @@ from typing import List, Literal, Optional
 
 import numpy as np
 
+from ..core.config import get_settings
 from ..schemas.ai import SlopeWatchPredictionOut
 from . import tflite_runtime
 from .influx import influx
@@ -79,6 +86,7 @@ async def _assemble_sequence(site_id: str, slope_id: str) -> Optional[np.ndarray
 
 async def run_slopewatch(site_id: str, slope_ids: List[str]) -> List[SlopeWatchPredictionOut]:
     now = datetime.now(timezone.utc)
+    settings = get_settings()
     out: List[SlopeWatchPredictionOut] = []
     for slope_id in slope_ids:
         score: Optional[float] = None
@@ -92,15 +100,37 @@ async def run_slopewatch(site_id: str, slope_ids: List[str]) -> List[SlopeWatchP
             log.warning("slopewatch inference error for %s: %s", slope_id, e)
 
         if score is None:
+            if not settings.enable_synthetic_ai_fallback:
+                # Prod: no trained model + no telemetry → sentinel NORMAL
+                # row rather than a Bishop-with-constant-soil-params surrogate
+                # that an operator might mistake for a real reading.
+                log.warning(
+                    "slopewatch: no inference available for %s; synthetic "
+                    "fallback disabled, returning sentinel NORMAL/0.0",
+                    slope_id,
+                )
+                out.append(SlopeWatchPredictionOut(
+                    site_id=site_id, slope_id=slope_id, timestamp=now,
+                    risk_score=0.0, alert_tier="NORMAL",
+                    pore_pressure_factor=0.0, tilt_factor=0.0,
+                    insar_factor=0.0, rainfall_factor=0.0,
+                    trend="STABLE", trend_rate=0.0,
+                ))
+                continue
             latest = await influx.latest("geo", slope_id)
             score = _fos_fallback(latest)
+            log.info(
+                "slopewatch: no trained model for %s, serving Bishop FoS "
+                "surrogate (enable_synthetic_ai_fallback=True)",
+                slope_id,
+            )
 
-        # Factor decomposition: pore / tilt / rainfall track the risk
-        # score linearly (Phase-2 approximation). ``insar_factor`` is
-        # pulled from the latest InSAR velocity via the calibrated
-        # ladder in ``insar_ingest``; when no InSAR series is ingested
-        # yet we fall back to the old 0.15 * score weighting so the PDF
-        # + dashboard still get a plausible bar.
+        # Illustrative driver weighting — NOT a SHAP attribution. See
+        # services/slopewatch.py docstring + the frontend FactorBar
+        # caption; this is a straight linear decomposition of the risk
+        # score for operator intuition. The ``insar_factor`` is pulled
+        # from the InSAR velocity ladder when a time-series is present;
+        # otherwise it tracks the score (0.15 x score) like the others.
         pore = 0.35 * score
         tilt = 0.25 * score
         velocity = await latest_velocity_mm_yr(slope_id)

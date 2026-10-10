@@ -4,14 +4,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-GeoSentinel is the Phase-1 implementation of `GeoSentinel_Dashboard_Spec_v1.0.docx`: an AI-powered environmental compliance and geohazard intelligence platform for African iron-ore mining. Pilot site is Tokadeh (Nimba County, Liberia). The repo is a monorepo; all three top-level apps are meant to run together via `docker-compose.dev.yml`.
+GeoSentinel is a reference implementation of `GeoSentinel_Dashboard_Spec_v1.0.docx`: an environmental compliance and geohazard intelligence platform for African iron-ore mining, designed around the realities of iron-ore operations in Nimba County, Liberia. The repo is a monorepo; all three top-level apps run together via `docker-compose.dev.yml`.
 
 ```
 frontend/   React 18 + TS + Vite + Tailwind + Three.js + Leaflet dashboard
 backend/    FastAPI + SQLAlchemy 2 async + Alembic + Celery + MQTT + InfluxDB
-ai/         EnviroGuard (LSTM+Attention) + SlopeWatch (PINN + Mohr-Coulomb)
+ai/         EnviroGuard (LSTM scaffold, not yet trained)
+            SlopeWatch (Bishop's Mohr-Coulomb FoS kernel + sequence-model
+            scaffold, not yet trained)
 infra/      mosquitto broker config
 ```
+
+**AI maturity (honest):** the Mohr-Coulomb kernel is operational and
+tested. The LSTM + sequence-model training scaffolds exist with model
+registry + promotion gates; no trained artifacts ship in-tree yet. See
+`services/enviroguard.py` / `services/slopewatch.py` for the inference
+paths and the `enable_synthetic_ai_fallback` flag that gates the
+dev-only hour-of-day / Bishop-with-constants surrogates.
 
 ## Commands
 
@@ -72,9 +81,9 @@ All v1 routes live under `app/api/v1/` and are aggregated by `app/api/v1/__init_
 
 ### AI inference split
 
-`backend/app/services/enviroguard.py` + `slopewatch.py` return Pydantic predictions. Phase 1 they emit deterministic values derived from time-of-day (EnviroGuard) or a constant baseline (SlopeWatch) — this is intentional: the *frontend* mock engine drives scenarios, and the backend only takes over when real InfluxDB data is present.
+`backend/app/services/enviroguard.py` + `slopewatch.py` return Pydantic predictions. If a trained TFLite artifact is available they load it and run real inference; otherwise they fall back to a deterministic surrogate (hour-of-day drift for EnviroGuard, Bishop's Mohr-Coulomb FoS with constant soil parameters for SlopeWatch). The surrogate is gated behind `settings.enable_synthetic_ai_fallback` — default True in dev so the dashboard is not blank on a clean checkout, validator-forbidden in production so no synthetic number ever reaches an operator. When the flag is off and no trained model is loaded the services return a sentinel LOW/NORMAL / 0.0-confidence row.
 
-`ai/enviroguard/model.py` + `ai/slopewatch/model.py` define the Keras architectures that Phase 2 will train. `ai/slopewatch/physics/mohr_coulomb.py` implements Bishop's simplified FoS iteratively and is wired as a physics-constrained loss term into the SlopeWatch PINN.
+`ai/enviroguard/model.py` + `ai/slopewatch/model.py` define the Keras training architectures (LSTM + attention; GRU → dense). No trained artifacts ship in-tree today. `ai/slopewatch/physics/mohr_coulomb.py` implements Bishop's simplified FoS iteratively — it runs as the service-time surrogate above and is intended to be wired as a physics term into the SlopeWatch training loss (not yet; see `docs/roadmap/`).
 
 ### Celery schedule
 

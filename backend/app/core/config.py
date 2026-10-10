@@ -84,6 +84,16 @@ class Settings(BaseSettings):
     # TensorFlow) stays lean. Set to True in a dedicated `trainer` image.
     enable_retrain_loop: bool = Field(default=False)
 
+    # When the TFLite inference path can't produce a prediction (no trained
+    # artifact, insufficient history, runtime error) the AI services fall
+    # back to a deterministic surrogate — hour-of-day drift for EnviroGuard,
+    # Bishop's Mohr-Coulomb FoS with constant soil parameters for SlopeWatch.
+    # The surrogate keeps the dashboard non-empty on a clean checkout but it
+    # is NOT a prediction. Default True in dev/demo; set to False in any
+    # environment where a null/degraded response is preferable to a fake
+    # one. Production forbids it entirely (see prod validator below).
+    enable_synthetic_ai_fallback: bool = Field(default=True)
+
     # Cookie-based refresh flow (Phase 2.1 §10).
     refresh_cookie_name: str = Field(default="gs_refresh")
     refresh_cookie_path: str = Field(default="/api/v1/auth")
@@ -127,6 +137,11 @@ class Settings(BaseSettings):
         if not self.report_signing_privkey_path.strip():
             errs.append(
                 "report_signing_privkey_path must point at the offline Ed25519 private key"
+            )
+        if self.enable_synthetic_ai_fallback:
+            errs.append(
+                "enable_synthetic_ai_fallback must be False in production — "
+                "synthetic surrogates must not reach real operators"
             )
         if errs:
             raise ValueError(
