@@ -2,27 +2,24 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls, PerspectiveCamera, Sky, Stats } from '@react-three/drei';
 import { useState } from 'react';
 import { Layers, Eye, EyeOff } from 'lucide-react';
-import { MinePit } from './MinePit';
-import { SlopeOverlay } from './SlopeOverlay';
+import { NimbaTerrain } from './NimbaTerrain';
 import { SensorMarkers } from './SensorMarkers';
-import { ExclusionZone } from './ExclusionZone';
+import type { Dem } from './terrain';
 import { clsx } from '@/utils/clsx';
 
 const PRESETS = {
-  overview: { pos: [120, 90, 120], target: [0, -20, 0] },
-  north_wall: { pos: [-40, 50, -120], target: [-40, -20, -40] },
-  tailings_dam: { pos: [120, 60, 100], target: [50, -10, 40] },
+  overview: { pos: [-80, 60, 110], target: [0, 8, 0] },
+  mount_nimba: { pos: [40, 30, 90], target: [50, 14, -40] },
+  yekepa: { pos: [-30, 20, 30], target: [-20, 5, 20] },
 } as const;
 
 type PresetKey = keyof typeof PRESETS;
 
 export function DigitalTwinScene() {
   const [preset, setPreset] = useState<PresetKey>('overview');
-  const [showRisk, setShowRisk] = useState(true);
   const [showNodes, setShowNodes] = useState(true);
-  const [showZones, setShowZones] = useState(true);
   const [showLabels, setShowLabels] = useState(true);
-  const [showWater, setShowWater] = useState(true);
+  const [dem, setDem] = useState<Dem | null>(null);
 
   const cam = PRESETS[preset];
 
@@ -31,19 +28,10 @@ export function DigitalTwinScene() {
       <Canvas shadows dpr={[1, 1.6]}>
         <PerspectiveCamera makeDefault position={cam.pos as [number, number, number]} fov={45} />
         <ambientLight intensity={0.55} />
-        <directionalLight position={[100, 200, 100]} intensity={1.3} castShadow />
-        <Sky distance={800} sunPosition={[100, 80, 100]} inclination={0.5} />
-        <MinePit />
-        <SlopeOverlay visible={showRisk} />
-        <SensorMarkers visible={showNodes} showLabels={showLabels} />
-        <ExclusionZone visible={showZones} />
-        {showWater && (
-          <mesh position={[55, -2, 50]} rotation={[-Math.PI / 2, 0, 0]}>
-            <planeGeometry args={[60, 50]} />
-            <meshStandardMaterial color="#3B82F6" metalness={0.1} roughness={0.2} opacity={0.7} transparent />
-          </mesh>
-        )}
-        <gridHelper args={[400, 40, '#1F3A5F', '#152A47']} position={[0, -50, 0]} />
+        <directionalLight position={[-120, 180, 60]} intensity={1.1} castShadow />
+        <Sky distance={800} sunPosition={[-120, 180, 60]} inclination={0.5} />
+        <NimbaTerrain onLoad={setDem} />
+        <SensorMarkers dem={dem} visible={showNodes} showLabels={showLabels} />
         <OrbitControls makeDefault target={cam.target as [number, number, number]} />
         {import.meta.env.DEV && false && <Stats />}
       </Canvas>
@@ -71,12 +59,23 @@ export function DigitalTwinScene() {
           <div className="flex items-center gap-1 px-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
             <Layers className="h-3 w-3" /> Overlays
           </div>
-          <ToggleRow label="Risk overlay" value={showRisk} onChange={setShowRisk} />
           <ToggleRow label="Sensor nodes" value={showNodes} onChange={setShowNodes} />
-          <ToggleRow label="Exclusion zones" value={showZones} onChange={setShowZones} />
           <ToggleRow label="Labels" value={showLabels} onChange={setShowLabels} />
-          <ToggleRow label="Water" value={showWater} onChange={setShowWater} />
         </div>
+      </div>
+
+      {/* Terrain attribution — Copernicus GLO-30 licence requires it. */}
+      <div className="absolute bottom-3 left-3 rounded bg-bg-deep/80 px-2 py-1 text-[10px] text-slate-400 ring-1 ring-bg-line">
+        {dem ? (
+          <>
+            Terrain: Contains modified <b>Copernicus GLO-30</b> data (ESA).
+            Area: {dem.extent_m.width.toFixed(0)} m &times; {dem.extent_m.height.toFixed(0)} m.
+            Elevation: {dem.elevation_m.min.toFixed(0)}&ndash;{dem.elevation_m.max.toFixed(0)} m.
+            Pit geometry pending operator sharing.
+          </>
+        ) : (
+          <>Loading Nimba terrain&hellip;</>
+        )}
       </div>
     </div>
   );

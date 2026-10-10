@@ -1,7 +1,10 @@
 import type { MineSite, MineSlope, SensorNode } from '@/types';
 
-// Tokadeh Pilot Site (Section 6.1) — fictional iron-ore site,
-// Nimba County, Liberia. 7.4 N, -8.7 E.
+// Tokadeh / Yekepa reference site — real Mount Nimba range coordinates
+// (summit ~7.608 N, 8.422 W; ArcelorMittal Liberia town of Yekepa
+// ~7.577 N, 8.544 W).  Elevations match the Copernicus GLO-30 DEM tile
+// shipped at /dem/nimba.json so the twin, map, and node positions all
+// agree on the same geography.
 
 export const TOKADEH_SITE_ID = 'tokadeh-pilot';
 
@@ -11,9 +14,9 @@ export const MOCK_NODES: SensorNode[] = [
     site_id: TOKADEH_SITE_ID,
     node_type: 'ENVIRONMENTAL',
     name: 'ENV-01 Drainage Outflow',
-    lat: 7.4012,
-    lng: -8.7045,
-    elevation_m: 412,
+    lat: 7.5700,
+    lng: -8.5440,
+    elevation_m: 560,
     battery_pct: 87,
     signal_rssi: -68,
     last_seen: new Date().toISOString(),
@@ -25,9 +28,9 @@ export const MOCK_NODES: SensorNode[] = [
     site_id: TOKADEH_SITE_ID,
     node_type: 'ENVIRONMENTAL',
     name: 'ENV-02 Tailings Pond N',
-    lat: 7.4089,
-    lng: -8.6998,
-    elevation_m: 520,
+    lat: 7.5825,
+    lng: -8.5305,
+    elevation_m: 620,
     battery_pct: 74,
     signal_rssi: -71,
     last_seen: new Date().toISOString(),
@@ -39,9 +42,9 @@ export const MOCK_NODES: SensorNode[] = [
     site_id: TOKADEH_SITE_ID,
     node_type: 'ENVIRONMENTAL',
     name: 'ENV-03 Community Intake',
-    lat: 7.3921,
-    lng: -8.7112,
-    elevation_m: 280,
+    lat: 7.5610,
+    lng: -8.5570,
+    elevation_m: 480,
     battery_pct: 92,
     signal_rssi: -78,
     last_seen: new Date().toISOString(),
@@ -53,9 +56,9 @@ export const MOCK_NODES: SensorNode[] = [
     site_id: TOKADEH_SITE_ID,
     node_type: 'GEOTECHNICAL',
     name: 'GEO-01 N Pit Wall A',
-    lat: 7.4067,
-    lng: -8.7021,
-    elevation_m: 605,
+    lat: 7.5970,
+    lng: -8.4600,
+    elevation_m: 1420,
     battery_pct: 81,
     signal_rssi: -65,
     last_seen: new Date().toISOString(),
@@ -67,9 +70,9 @@ export const MOCK_NODES: SensorNode[] = [
     site_id: TOKADEH_SITE_ID,
     node_type: 'GEOTECHNICAL',
     name: 'GEO-02 Tailings Dam E',
-    lat: 7.4102,
-    lng: -8.6971,
-    elevation_m: 528,
+    lat: 7.5880,
+    lng: -8.5265,
+    elevation_m: 640,
     battery_pct: 64,
     signal_rssi: -72,
     last_seen: new Date().toISOString(),
@@ -87,11 +90,11 @@ export const MOCK_SLOPES: MineSlope[] = [
       type: 'Polygon',
       coordinates: [
         [
-          [-8.7035, 7.4055],
-          [-8.7005, 7.4058],
-          [-8.7000, 7.4078],
-          [-8.7032, 7.4080],
-          [-8.7035, 7.4055],
+          [-8.4650, 7.5950],
+          [-8.4550, 7.5955],
+          [-8.4540, 7.5995],
+          [-8.4645, 7.6000],
+          [-8.4650, 7.5950],
         ],
       ],
     },
@@ -111,11 +114,11 @@ export const MOCK_SLOPES: MineSlope[] = [
       type: 'Polygon',
       coordinates: [
         [
-          [-8.6985, 7.4090],
-          [-8.6960, 7.4095],
-          [-8.6958, 7.4115],
-          [-8.6986, 7.4112],
-          [-8.6985, 7.4090],
+          [-8.5295, 7.5860],
+          [-8.5240, 7.5870],
+          [-8.5235, 7.5905],
+          [-8.5290, 7.5900],
+          [-8.5295, 7.5860],
         ],
       ],
     },
@@ -131,19 +134,19 @@ export const MOCK_SLOPES: MineSlope[] = [
 
 export const MOCK_SITE: MineSite = {
   id: TOKADEH_SITE_ID,
-  name: 'Tokadeh Pilot Site',
+  name: 'Tokadeh / Yekepa Reference Site',
   region: 'Nimba County',
   country: 'Liberia',
-  centroid: { lat: 7.4035, lng: -8.7025 },
+  centroid: { lat: 7.5775, lng: -8.5000 },
   boundary: {
     type: 'Polygon',
     coordinates: [
       [
-        [-8.7150, 7.3900],
-        [-8.6940, 7.3905],
-        [-8.6920, 7.4135],
-        [-8.7160, 7.4140],
-        [-8.7150, 7.3900],
+        [-8.5700, 7.5500],
+        [-8.4500, 7.5500],
+        [-8.4500, 7.6050],
+        [-8.5700, 7.6050],
+        [-8.5700, 7.5500],
       ],
     ],
   },
