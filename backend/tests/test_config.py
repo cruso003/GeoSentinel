@@ -15,6 +15,7 @@ def _prod_kwargs(**overrides):
         model_signing_pubkey="00" * 32,
         report_signing_pubkey="11" * 32,
         report_signing_privkey_path="/srv/keys/report_signing.pem",
+        enable_synthetic_ai_fallback=False,
     )
     base.update(overrides)
     return base
@@ -70,7 +71,15 @@ def test_production_rejects_missing_report_signing_privkey_path():
         Settings(**_prod_kwargs(report_signing_privkey_path=""))
 
 
+def test_production_rejects_synthetic_ai_fallback():
+    with pytest.raises(ValueError, match="enable_synthetic_ai_fallback"):
+        Settings(**_prod_kwargs(enable_synthetic_ai_fallback=True))
+
+
 def test_development_stays_permissive():
     s = Settings(env="development")
     assert s.jwt_secret_key == "dev-secret-please-replace-please-please"
     assert s.cors_origins == ["http://localhost:5173"]
+    # Dev still shows the hour-of-day surrogate so a clean checkout is
+    # not blank; prod validator above enforces the opposite.
+    assert s.enable_synthetic_ai_fallback is True

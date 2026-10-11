@@ -23,15 +23,30 @@ export async function listReports(): Promise<ComplianceReport[]> {
   return api.get('/reports');
 }
 
-export interface ReportSignatureBundle {
+export interface ReportSignatureEnvelope {
+  v: number;
   report_id: string;
-  signature_b64: string;
-  pubkey_hex: string;
+  site_id: string;
+  report_type: string;
+  period_start: string | null;
+  period_end: string | null;
   pdf_sha256: string;
 }
 
-/** Fetches the detached Ed25519 signature bundle for an auditor to verify
- * the PDF offline. Backend returns 404 for unsigned/legacy reports. */
+export interface ReportSignatureBundle {
+  report_id: string;
+  envelope: ReportSignatureEnvelope;
+  signature_b64: string;
+  pubkey_hex: string;
+}
+
+/** Fetches the detached Ed25519 signature bundle for an auditor to
+ * verify the PDF offline. The ``envelope`` object binds the signature
+ * to the report's identity (id, site, period, PDF hash) — a verifier
+ * canonicalises it (sorted keys, no whitespace) and Ed25519-verifies
+ * against the base64-decoded signature with the pubkey. Backend returns
+ * 404 for unsigned / legacy reports. Endpoint is intentionally public
+ * so external auditors do not need a login. */
 export async function getReportSignature(
   reportId: string,
 ): Promise<ReportSignatureBundle> {

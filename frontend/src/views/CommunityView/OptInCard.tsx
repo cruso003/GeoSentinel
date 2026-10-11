@@ -1,10 +1,6 @@
 import { useState } from 'react';
 import { BellRing } from 'lucide-react';
-import {
-  confirmCommunity,
-  subscribeCommunity,
-  type CommunityLanguage,
-} from '@/api/community';
+import { confirmCommunity, subscribeCommunity } from '@/api/community';
 import { ApiError } from '@/api/client';
 import { clsx } from '@/utils/clsx';
 
@@ -14,18 +10,11 @@ interface Props {
   siteId: string;
 }
 
-const LANGUAGES: { value: CommunityLanguage; label: string }[] = [
-  { value: 'en', label: 'English' },
-  { value: 'mano', label: 'Mano' },
-  { value: 'gio', label: 'Dan (Gio)' },
-];
-
 const E164_RE = /^\+\d{8,15}$/;
 
 export function OptInCard({ siteId }: Props) {
   const [step, setStep] = useState<Step>('form');
   const [phone, setPhone] = useState('');
-  const [language, setLanguage] = useState<CommunityLanguage>('en');
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +36,6 @@ export function OptInCard({ siteId }: Props) {
       const res = await subscribeCommunity({
         phone_number: phone,
         site_id: siteId,
-        language,
       });
       setExpiresAt(res.expires_at);
       setDebugCode(res.debug_code);
@@ -102,18 +90,6 @@ export function OptInCard({ siteId }: Props) {
                   className="mt-1 block w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   required
                 />
-              </label>
-              <label className="block text-xs font-medium text-slate-700">
-                Language
-                <select
-                  value={language}
-                  onChange={(e) => setLanguage(e.target.value as CommunityLanguage)}
-                  className="mt-1 block w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                >
-                  {LANGUAGES.map((l) => (
-                    <option key={l.value} value={l.value}>{l.label}</option>
-                  ))}
-                </select>
               </label>
               <button
                 type="submit"

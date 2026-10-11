@@ -1,11 +1,8 @@
 import { api } from './client';
 
-export type CommunityLanguage = 'en' | 'mano' | 'gio';
-
 export interface CommunityOptInRequest {
   phone_number: string;
   site_id: string;
-  language: CommunityLanguage;
 }
 
 export interface CommunityOptInResponse {

@@ -43,9 +43,10 @@ def _synthetic_frame(days: int, node_ids: Iterable[str]) -> pd.DataFrame:
         periods=steps,
         freq="15min",
     )
-    hours = ts.hour + ts.minute / 60
-    # Wet season: Apr–Oct in Liberia.
-    wet = ts.month.isin([4, 5, 6, 7, 8, 9, 10]).astype(float).to_numpy()
+    hours = (ts.hour + ts.minute / 60).to_numpy()
+    # Wet season: Apr–Oct in Liberia. np.isin returns an ndarray in both
+    # pandas 2.x and 3.x; .astype(float) then gives us the 0/1 mask.
+    wet = np.isin(ts.month.to_numpy(), [4, 5, 6, 7, 8, 9, 10]).astype(float)
     rain_background = np.maximum(0, rng.normal(0.05, 0.1, steps)) * (1 + 4 * wet)
     storm_mask = rng.random(steps) < 0.01
     storms = rain_background + storm_mask * rng.uniform(2, 15, steps)
@@ -53,16 +54,66 @@ def _synthetic_frame(days: int, node_ids: Iterable[str]) -> pd.DataFrame:
 
     frames = []
     for node in node_ids:
+        # Baseline formulas now stay inside IFC thresholds under normal
+        # operation (ph 6-9, turbidity <= 5, DO >= 6, cond <= 500,
+        # pm25 <= 25).  Breaches come from the injected events below,
+        # giving the classifier a signal distinct from ambient noise.
         ph = 7.6 + 0.2 * np.sin(hours / 24 * 2 * np.pi) + 0.05 * rng.standard_normal(steps)
-        turb = 2.0 + 3.0 * wet + 0.8 * rng.standard_normal(steps) + storms * 0.4
+        turb = 1.2 + 1.5 * wet + 0.4 * rng.standard_normal(steps) + storms * 0.3
         do = 8.0 - 0.5 * np.sin(hours / 24 * 2 * np.pi) + 0.2 * rng.standard_normal(steps)
         cond = 220 + 40 * wet + 15 * rng.standard_normal(steps)
         temp = 24 + 3 * np.sin((hours - 14) / 24 * 2 * np.pi) + 0.3 * rng.standard_normal(steps)
-        pm25 = 15 + 8 * np.sin((hours - 18) / 24 * 2 * np.pi) + 2 * rng.standard_normal(steps)
+        pm25 = 10 + 5 * np.sin((hours - 18) / 24 * 2 * np.pi) + 1.5 * rng.standard_normal(steps)
         pm10 = pm25 * 1.6 + rng.uniform(2, 6, steps)
         so2 = np.clip(12 + 3 * rng.standard_normal(steps), 0, None)
         no2 = np.clip(18 + 4 * rng.standard_normal(steps), 0, None)
         noise = np.clip(55 + 10 * (wet * 0.3) + 3 * rng.standard_normal(steps), 30, None)
+
+        # Inject scenario-overlay exceedance events so the training frame has
+        # non-trivial positive examples for every IFC head.  Without this,
+        # the frame is pure "normal operations" and the ML baseline has
+        # nothing to learn — classifiers degenerate to always-predict-0.
+        # Each event: a Hann-tapered bump of random duration (3–18 h) added
+        # to the baseline curve, placed at random day boundaries.  Rate per
+        # 15-day block picked so each head sees ≈ 5-15% positive windows.
+        def _inject_bumps(signal, n_events, duration_steps_choices, amp_choices):
+            for _ in range(n_events):
+                start = int(rng.integers(0, max(1, steps - 72)))
+                dur = int(rng.choice(duration_steps_choices))
+                end = min(steps, start + dur)
+                length = end - start
+                if length <= 0:
+                    continue
+                window = 0.5 * (1 - np.cos(2 * np.pi * np.arange(length) / length))
+                amp = float(rng.choice(amp_choices))
+                signal[start:end] = signal[start:end] + amp * window
+            return signal
+
+        # Target ~ 10-20 % positive window rate per head; events last long
+        # enough (12-96 h) that a window ending inside an event is very
+        # likely still inside it 24-72 h later — the "last value" feature
+        # therefore carries real signal, which is what the classifier is
+        # supposed to learn.
+        n_days = max(1, steps // 96)
+        # pH drift (acidic spills + alkaline tailings).
+        ph = _inject_bumps(ph, max(1, n_days // 12), [24, 48, 72], [-2.6, -2.2, +2.4, +2.8])
+        # Turbidity storm residues above the baseline (tuned down from
+        # earlier so pos rate ≈ 15 %, not ≈ 95 %).
+        turb = _inject_bumps(turb, max(1, n_days // 14), [16, 24, 32], [3.0, 4.5, 6.5])
+        # DO drop (eutrophication / warm-season anoxia).
+        do = _inject_bumps(do, max(1, n_days // 10), [24, 48, 96], [-3.5, -3.0, -2.8])
+        # Conductivity spike (tailings seepage).
+        cond = _inject_bumps(cond, max(1, n_days // 10), [12, 24, 48], [280, 400, 500])
+        # PM2.5 dust events (haul-truck convoys, blasting) — short + rare
+        # so the 24 h horizon has a sensible pos rate.
+        pm25 = _inject_bumps(pm25, max(1, n_days // 10), [4, 8, 16], [10, 18, 28])
+        # Keep physical bounds sane after injection.
+        ph = np.clip(ph, 2.0, 12.0)
+        turb = np.clip(turb, 0, None)
+        do = np.clip(do, 0, None)
+        cond = np.clip(cond, 0, None)
+        pm25 = np.clip(pm25, 0, None)
+        pm10 = pm25 * 1.6 + rng.uniform(2, 6, steps)
         frame = pd.DataFrame({
             "timestamp": ts,
             "node_id": node,

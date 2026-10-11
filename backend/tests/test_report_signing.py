@@ -15,9 +15,12 @@ pytest.importorskip("cryptography")
 from app.services import report_signing as rs
 from app.services.report_signing import (
     ReportSigningError,
+    build_envelope,
     clear_cache,
     sign_pdf,
+    sign_report,
     verify_pdf,
+    verify_report,
 )
 
 
@@ -154,3 +157,80 @@ class _FakeSettings:
     def __init__(self, *, report_signing_privkey_path: str, report_signing_pubkey: str):
         self.report_signing_privkey_path = report_signing_privkey_path
         self.report_signing_pubkey = report_signing_pubkey
+
+
+# ---------------------------------------------------------------------------
+# Envelope-aware signing (binds metadata to the signature so a malicious
+# operator cannot swap report_id or site_id post-hoc and keep a valid sig).
+# ---------------------------------------------------------------------------
+
+
+def _env(pdf: bytes, **overrides) -> dict:
+    defaults = dict(
+        report_id="rep-123",
+        site_id="tokadeh",
+        report_type="IFC_PERFORMANCE",
+        period_start="2026-03-01T00:00:00",
+        period_end="2026-03-31T23:59:59",
+    )
+    defaults.update(overrides)
+    return build_envelope(pdf_bytes=pdf, **defaults)
+
+
+def test_envelope_roundtrip():
+    pdf = b"%PDF-1.4\nbody\n%%EOF"
+    envelope = _env(pdf)
+    sig, pubkey = sign_report(envelope, pdf)
+    assert verify_report(envelope, pdf, sig, pubkey) is True
+
+
+def test_envelope_verify_fails_when_report_id_swapped():
+    pdf = b"%PDF-1.4\nbody\n%%EOF"
+    envelope = _env(pdf, report_id="rep-original")
+    sig, pubkey = sign_report(envelope, pdf)
+    tampered = dict(envelope, report_id="rep-swapped")
+    assert verify_report(tampered, pdf, sig, pubkey) is False
+
+
+def test_envelope_verify_fails_when_site_id_swapped():
+    pdf = b"%PDF-1.4\nbody\n%%EOF"
+    envelope = _env(pdf, site_id="tokadeh")
+    sig, pubkey = sign_report(envelope, pdf)
+    tampered = dict(envelope, site_id="other-site")
+    assert verify_report(tampered, pdf, sig, pubkey) is False
+
+
+def test_envelope_verify_fails_when_pdf_bytes_tampered():
+    pdf = b"%PDF-1.4\nclean\n%%EOF"
+    envelope = _env(pdf)
+    sig, pubkey = sign_report(envelope, pdf)
+    assert verify_report(envelope, pdf.replace(b"clean", b"dirty"), sig, pubkey) is False
+
+
+def test_sign_report_refuses_envelope_with_stale_pdf_hash():
+    pdf = b"%PDF-1.4\nbody\n%%EOF"
+    envelope = _env(pdf)
+    other_pdf = b"%PDF-1.4\nother\n%%EOF"
+    with pytest.raises(ReportSigningError, match="pdf_sha256"):
+        sign_report(envelope, other_pdf)
+
+
+def test_envelope_canonicalization_is_order_independent():
+    """Two envelopes with the same fields but inserted in different orders
+    must produce identical canonical bytes — otherwise verifiers that
+    build the envelope dict differently from us would silently fail."""
+
+    pdf = b"%PDF-1.4\nbody\n%%EOF"
+    e1 = _env(pdf)
+    e2 = {k: e1[k] for k in reversed(list(e1.keys()))}
+    sig, pubkey = sign_report(e1, pdf)
+    assert verify_report(e2, pdf, sig, pubkey) is True
+
+
+def test_envelope_rejects_unknown_version():
+    pdf = b"%PDF-1.4\nbody\n%%EOF"
+    envelope = _env(pdf)
+    sig, pubkey = sign_report(envelope, pdf)
+    envelope["v"] = 999
+    with pytest.raises(ReportSigningError, match="envelope version"):
+        verify_report(envelope, pdf, sig, pubkey)

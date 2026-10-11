@@ -1,7 +1,11 @@
 """In-memory WebSocket pub/sub hub.
 
-Spec §5.3 — messages pushed as JSON:
-    SENSOR_UPDATE, ALERT_NEW, ALERT_ACKNOWLEDGED, AI_PREDICTION, NODE_STATUS
+Spec §5.3 — messages pushed as JSON. Currently broadcast:
+    SENSOR_UPDATE, ALERT_NEW, ALERT_ACKNOWLEDGED, AI_PREDICTION
+
+``NODE_STATUS`` (online/offline/degraded transitions) is in the schema but
+not yet emitted — it needs an MQTT-side ``last_seen`` sweep and an alert
+engine integration. Tracked under ``docs/roadmap/functional-gaps.md``.
 
 Phase 2.2 S13: broadcasts fan out concurrently with a per-send timeout.
 One slow or wedged client no longer blocks its peers, and the dead-socket

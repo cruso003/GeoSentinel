@@ -168,12 +168,14 @@ export interface AuthSession {
 // WebSocket message envelope (Section 5.3)
 // ---------------------------------------------------------------------------
 
+// NODE_STATUS is reserved for the online/offline/degraded broadcast added
+// in a future phase (needs an MQTT last-seen sweep + alert integration);
+// it is not currently emitted by the backend. See docs/roadmap/.
 export type WSMessage =
   | { type: 'SENSOR_UPDATE'; data: EnvSensorReading | GeoSensorReading }
   | { type: 'ALERT_NEW'; data: Alert }
   | { type: 'ALERT_ACKNOWLEDGED'; data: { alert_id: string } }
-  | { type: 'AI_PREDICTION'; data: EnviroGuardPrediction | SlopeWatchPrediction }
-  | { type: 'NODE_STATUS'; data: { node_id: string; status: NodeStatus } };
+  | { type: 'AI_PREDICTION'; data: EnviroGuardPrediction | SlopeWatchPrediction };
 
 // ---------------------------------------------------------------------------
 // Mock-mode scenarios (Section 6.2)

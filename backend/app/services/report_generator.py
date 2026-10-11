@@ -40,7 +40,7 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-from .report_signing import ReportSigningError, sign_pdf
+from .report_signing import ReportSigningError, build_envelope, sign_report
 from .report_stats import ExceedanceLogRow, GeohazardSummary, ReportData, StatsRow
 
 log = logging.getLogger(__name__)
@@ -109,6 +109,8 @@ def generate_report(
     period_end: datetime,
     report_type: str,
     data: ReportData | None = None,
+    *,
+    site_id: str | None = None,
 ) -> GeneratedReport:
     """Render the PDF, sign it, and return a :class:`GeneratedReport`.
 
@@ -212,12 +214,23 @@ def generate_report(
     pdf_bytes = buffer.getvalue()
     out_path.write_bytes(pdf_bytes)
 
-    # Sign the PDF bytes *after* the doc is built — the signature binds
-    # to the exact bytes the reviewer will download.
+    # Sign the (envelope + PDF) bundle *after* the doc is built — the
+    # signature binds to the exact bytes the reviewer will download AND
+    # to the report's identity (so metadata cannot be swapped post-hoc).
     signature_b64: str | None = None
     pubkey_hex: str | None = None
     try:
-        sig, pubkey_hex = sign_pdf(pdf_bytes)
+        envelope = build_envelope(
+            report_id=report_id,
+            # Prefer the stable id for binding; fall back to display name when
+            # the caller didn't supply one (shell / smoke-test paths).
+            site_id=site_id or site_name,
+            report_type=report_type,
+            period_start=period_start.isoformat(),
+            period_end=period_end.isoformat(),
+            pdf_bytes=pdf_bytes,
+        )
+        sig, pubkey_hex = sign_report(envelope, pdf_bytes)
         (out_path.with_suffix(out_path.suffix + ".sig")).write_bytes(sig)
         signature_b64 = base64.b64encode(sig).decode("ascii")
     except ReportSigningError as e:

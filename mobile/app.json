@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "GeoSentinel",
+    "slug": "geosentinel-mobile",
+    "scheme": "geosentinel",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F1F36"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.geosentinel.mobile"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0F1F36",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "package": "app.geosentinel.mobile",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "GeoSentinel uses your location to tell you whether you are standing in a permitted mining area, a protected forest, or a no-go zone. Readings never leave your phone unless you explicitly submit a report."
+        }
+      ]
+    ]
+  }
+}

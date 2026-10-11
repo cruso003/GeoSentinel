@@ -21,8 +21,14 @@ yarn-debug.log*
 .env.local
 *.pem
 
-# AI artifacts
+# AI artifacts — ignored by default (trained artifacts are large and
+# vary per environment), but we carve out the EnviroGuard baseline so the
+# backend service has a real trained model loaded on first boot.
+# See ai/enviroguard/README.md for the training protocol + metrics.
 ai/**/artifacts/
+!ai/enviroguard/artifacts/
+!ai/enviroguard/artifacts/*.onnx
+!ai/enviroguard/artifacts/*.json
 *.tflite
 *.h5
 
