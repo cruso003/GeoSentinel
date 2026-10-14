@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Image,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -78,6 +79,7 @@ export default function WhereCanIMineScreen() {
       speed: null,
     });
     setDemoMode(true);
+    setError(null);
     setVerdict(classifyLocation(pin.lng, pin.lat));
   };
 
@@ -105,7 +107,11 @@ export default function WhereCanIMineScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bgDeep }} edges={['bottom']}>
-      <View style={styles.content}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
         <Text style={styles.hint}>
           Your location is checked against licence boundaries bundled with the app. The hillshade is
           Nimba, from Copernicus GLO-30 (ESA). More regions ship as we add them.
@@ -261,7 +267,7 @@ export default function WhereCanIMineScreen() {
             <Text style={[styles.demoChipText, { color: colors.critical }]}>Demo: East Nimba Reserve (RED)</Text>
           </Pressable>
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -294,7 +300,6 @@ function verdictBadgeStyle(tier: Verdict['tier']) {
 
 const styles = StyleSheet.create({
   content: {
-    flex: 1,
     padding: 16,
     gap: 14,
   },
